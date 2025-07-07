@@ -39,7 +39,6 @@ class NMT(nn.Module, ABC):
         """
         return self.source_embeddings.weight.device
 
-    @abstractmethod
     @classmethod
     def load(cls, model_path: str):
         """

@@ -10,7 +10,8 @@ import torch.nn.utils
 import torch.nn.functional as F
 from torch.nn.utils.rnn import pad_packed_sequence, pack_padded_sequence
 from .util import NMT, Hypothesis
-from ..vocab.vocab import Vocab
+from vocab.vocab import Vocab
+
 
 class Fwd_RNN(NMT):
     """
@@ -58,12 +59,22 @@ class Fwd_RNN(NMT):
         # produce the predicted translation in the output language. This layer cannot be bi-directional since
         # we make y-hat predictions sequentially from left-to-right. The inputs are a concatenation of the
         # word embedding of the prior predicted word and the final context vector from the encoder
-        self.decoder = nn.RNNCell(input_size=embed_size + hidden_size, hidden_size=hidden_size,
-                                  nonlinearity="tanh", bias=True)
+        self.decoders = [] # All layers MUST be defined as separate attributes of the model
+        # The first layer expects the new word embedding input + the hidden state from the prior layer
+        self.decoder_0 = nn.RNNCell(input_size=embed_size + hidden_size, hidden_size=hidden_size,
+                                    nonlinearity="tanh", bias=True)
+        self.decoders.append(self.decoder_0)
 
-        # Takes in the last hidden state of each sentence in a batch of sentences and applies a weight matrix
-        # transformation via a hidden layer to initialize the hidden state of the decoder
-        self.h_projection = nn.Linear(in_features=hidden_size, out_features=hidden_size, bias=True)
+        for i in range(1, self.num_layers):  # Add additional decoder layers as needed, they take the input
+            # of the prior hidden state from the same later 1 timestep back + the hidden state below
+            setattr(self, f"decoder_{i}", nn.RNNCell(input_size=hidden_size * 2, hidden_size=hidden_size,
+                                                       nonlinearity="tanh", bias=True))
+            self.decoders.append(getattr(self, f"decoder_{i}"))
+
+        # Takes in the last hidden state of layer for each sentence in a batch of sentences and applies a
+        # weight matrix transformation via a hidden layer to initialize the hidden state of the decoder
+        self.h_projection = nn.Linear(in_features=hidden_size * self.num_layers,
+                                      out_features=hidden_size * self.num_layers, bias=True)
 
         # This is used to compute the final y-hat distribution of probabilities over the entire vocab for what
         # word token should come next. I.e. y_hat = softmax(W_{vocab} @ h_{t}) where y_hat is a length |V|
@@ -104,13 +115,13 @@ class Fwd_RNN(NMT):
         target_padded = self.vocab.tgt.to_input_tensor(target, device=self.device)  # Tensor (b, tgt_len)
 
         # Call the encoder on the padded source sentences, get the initialization of the decoder hidden state
-        dec_init_state = self.encode(source_padded, source_lengths) # (batch_size, hidden_size)
+        dec_init_states = self.encode(source_padded, source_lengths) # (batch_size, layers, hidden_size)
 
         # Call the decoder using the initialized decoder hidden state and the padded target sentences to
-        # generate the hidden states of the decoder at each time step for each sentence
-        dec_hidden_states = self.decode(dec_init_state, target_padded) # (batch_size, tgt_len, hidden_size)
-        # Compute the prob distribution over the vocabulary for each prediction timestep from the decoder
+        # generate the top layer hidden states of the decoder at each time step for each sentence
+        dec_hidden_states = self.decode(dec_init_states, target_padded) # (batch_size, tgt_len, hidden_size)
 
+        # Compute the prob distribution over the vocabulary for each prediction timestep from the decoder
         prob = F.log_softmax(self.target_vocab_projection(dec_hidden_states), dim=-1) # (b, tgt_len, V)
 
         # Zero out, probabilities for which we have nothing in the target text i.e. the padding, create a bool
@@ -119,13 +130,13 @@ class Fwd_RNN(NMT):
 
         # Compute log probability of generating the true target words provided in this example i.e. compute
         # the cross-entropy loss by pulling out the model's y-hat values for the true target words. For each
-        # word in each sentence, pull out the y_hat prob associated with the true target word produced.
-        # Now we have the y_hat values for each word in each sentence, we lose 1 at the end because we are
-        # comparing the output predicted word at timestep t vs the actual next word at timestep t+1. The
-        # target_padded sentences start out with a <s> token which we're not predicting, we're predicting
-        # what comes next on the first timestep after that has been input into the model
+        # word in each sentence, pull out the y_hat prob associated with the true target word at time t.
+        # probs is (b, tgt_len, V) and describes the probability distribution over the next word after the
+        # current time step t. I.e. the first Y_t token is <s> and the first y_hat is the distribution of
+        # what the model thinks should come afterwards. Hence probs[:, :-1, :] aligns with the true Y_t words
+        # target_padded[:, 1:]
         target_words_log_prob = torch.gather(prob[:, :-1, :], index=target_padded[:, 1:].unsqueeze(-1),
-                                             dim=-1).squeeze(-1) # (b, tgt_len - 1)
+                                             dim=-1).squeeze(-1) # (b, tgt_len - 1) result
         # Zero out the y_hat values for the padding tokens so that they don't contribute to the sum
         target_words_log_prob = target_words_log_prob * target_masks[:, 1:] # (b, tgt_len - 1)
         return target_words_log_prob.sum(dim=1) # Return the log prob per sentence
@@ -148,6 +159,7 @@ class Fwd_RNN(NMT):
 
         Returns
         -------
+        dec_init_states : torch.Tensor
         A tensor representing the decoder's initial hidden state for each sentence of size (b, h)
 
         """
@@ -165,15 +177,21 @@ class Fwd_RNN(NMT):
         # Pass in the packed sentense of sentences of size (batch_size, src_len, embed_dim). This returns
         # a tensor of size (batch_size, src_len, hidden_size) containing the hidden states of the RNN at each
         # timestep (i.e. word in each sentence) and also the last hidden state for each sentence encoding.
-        enc_hiddens, last_hidden = self.encoder(X_packed)
+        enc_hiddens, last_hiddens = self.encoder(X_packed) # last_hiddens = (layers, b, h)
+        # Switch the dimensions to be (b, layers, h), then reshape to be (b, layer * h)
+        last_hiddens = last_hiddens.transpose(0, 1)
+        shp = last_hiddens.shape
+        last_hiddens = last_hiddens.reshape(shp[0], shp[1] * shp[2]) # Size is now (b, layer * h)
 
-        # last_hidden is a tensor of size (b, h), pass it through the h_projection layer to compute the inital
-        # state of the decoder for each sentence in the batch
-        dec_init_state = self.h_projection(last_hidden.squeeze(0)) # last_hidden = (b, h)
-        return dec_init_state # (batch_size, hidden_size)
+        # last_hiddens is a tensor of size (b, layers * h), pass it through the h_projection layer to compute
+        # the inital states of the decoder for each layer and for each sentence in the batch
+        # (b, layers * h) @ (layers * h, layers * h) = (b, layers * h)
+        shp = last_hiddens.shape
+        dec_init_states = self.h_projection(last_hiddens).reshape(shp[0], self.num_layers, self.hidden_size)
+        return dec_init_states # (batch_size, layers, hidden_size)
 
 
-    def decode(self, dec_init_state: torch.Tensor, target_padded: torch.Tensor) -> torch.Tensor:
+    def decode(self, dec_init_states: torch.Tensor, target_padded: torch.Tensor) -> torch.Tensor:
         """
         Computes output hidden-state vectors for each word in each batch of target sentences i.e. runs the
         decoder to generate the output sequence of hidden states for each word of each sentence while using
@@ -182,7 +200,7 @@ class Fwd_RNN(NMT):
 
         Parameters
         ----------
-        dec_init_state : torch.Tensor
+        dec_init_states : torch.Tensor
             An initial state for the decoder for each sentence of size (batch_size, hidden_size).
         target_padded : torch.Tensor
             A tensor of size (batch_size, tgt_len) of padded gold-standard output translations encoded as
@@ -197,29 +215,31 @@ class Fwd_RNN(NMT):
         """
         # target_padded = target_padded[:, :-1] # Remove the <END> token for max length sentences
 
-        dec_state = dec_init_state # Initialize the decoder state with the decoder init from the encoder
-
         # Construct a tensor Y of observed translated sentences with a shape of (b, tgt_len, e) using the
         # target model embeddings where tgt_len = maximum target sentence length and e = embedding size.
         # We use these actual translated words in our training set to score our model's predictions
         Y = self.target_embeddings(target_padded)
 
-        hidden_states = []
+        dec_states = dec_init_states # Start the prior decoder states using the final hidden state from
+        # the encoder, this is size (batch_size, layers, hidden_size)
+        hidden_states = [] # Record the hidden states of the final top layer for each timestep, these are the
+        # vectors that are used to make output y-hat word predictions
 
         # Use the torch.split function to iterate over the time dimension of Y, this will give us Y_t which
         # is a tensor of size (1, b, e) i.e. the word embedding of the ith target word from each sentence
         for Y_t in torch.split(tensor=Y, split_size_or_sections=1, dim=1): # Spling along dim=1 i.e. iter
             # over words in each sentence
             Y_t = torch.squeeze(Y_t, dim=1) # Squeeze Y_t into (b, e). i.e. remove the 2nd dim
-            dec_state = self.step(Y_t, dec_state) # Perform a forward step of the decoder, update the h_t
-            hidden_states.append(dec_state) # Append the updated h_t to a list of all such vectors
+            dec_states = self.step(Y_t, dec_states) # Perform a forward step of the decoder, update h_t
+            # dec_states is (batch_size, layers, hidden_size)
+            hidden_states.append(dec_states[:, -1, :]) # Record the top layer at each timestep (b, h)
 
         # Return a stacked tensor of size (batch_size, tgt_len, hidden_size) containing the hidden states of
         # the decoder at each timestep which would be used to generate y_hat predicted next words
         return torch.stack(hidden_states).transpose(0, 1) # (batch_size, tgt_len, hidden_size)
 
 
-    def step(self, Y_t: torch.tensor, dec_state: torch.tensor) -> torch.Tensor:
+    def step(self, Y_t: torch.tensor, dec_states: torch.tensor) -> torch.Tensor:
         """
         Computes one forward step of the RNN decoder, returns the hidden state after making an update.
 
@@ -228,7 +248,7 @@ class Fwd_RNN(NMT):
         Y_t : torch.tensor
             A tensor containing the word embedding for the new target word coming in at time t of size
             (batch_size, embed_size).
-        dec_state : torch.tensor
+        dec_states : torch.tensor
             A tensor containing the prior hidden state for each sentence of size (batch_size, hidden_size).
 
         Returns
@@ -237,10 +257,20 @@ class Fwd_RNN(NMT):
             The updated decoder hidden state updated using the input word vector Y_t and the prior hidden
             state passed in as inputs. Returns a tensor of size (batch_size, hidden_size).
         """
-        # Update the decoder hidden state for the current time step using the input word target word Y_t of
-        # size (b, h) and the decoder hidden state from the prior step at time t-1 of size (b, h)
-        dec_state = self.decoder(torch.cat([Y_t, dec_state], axis=1))
-        return dec_state # (batch_size, hidden_size)
+        # Update the decoder hidden states for the current time step using the input word target word Y_t of
+        # size (b, h) and the decoder hidden states from the prior step at time t-1 of size (b, layers, h)
+        hidden_states = [] # Collect the hidden state computes at each layer, each of size (b, h)
+        # Start off with the first decoder layer, the bottom-most, which takes in the Y_t next word and the
+        # hidden state of the lowest layer prior
+        hidden_states.append(self.decoders[0](torch.cat([Y_t, dec_states[:, 0, :]], axis=1)))
+
+        # Then we work upwards through the layers from bottom to top and pass up the hidden state
+        for i in range(1, self.num_layers): # The inputs to each decoder cell are the prior hidden state
+            # nodes from (t-1) and the hidden state of the layer below
+            hidden_states.append(self.decoders[0](torch.cat([hidden_states[-1], dec_states[:, i, :]],
+                                                            axis=1)))
+        # Return the combined / stacked hidden states from the decoder run at this time stamp
+        return torch.stack(hidden_states).transpose(0, 1) # (batch_size, layers, hidden_size)
 
 
     def greedy_search(self, src_sentence: List[str], max_decode_length: int = 70) -> Hypothesis:

@@ -1,16 +1,19 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
+Model training module
+
 Usage:
-    python train.py --model<str> --embed-size<int> --hidden-size<int> --src-lang<str> --tgt-lang<str>
+    train.py --model=<str> [options]
 
 Options:
     -h --help                   Show this screen.
     --model=<str>               The name of the model to be trained
     --embed-size=<int>          The size of the word vec embeddings [default: 256]
     --hidden-size=<int>         The size of the hidden state [default: 256]
-    --src-lang=<str>            The source language to translate from [default: "deu"]
-    --tgt-lang=<str>            The target language to translate into [default: "eng"]
+    --num-layers=<int>          The number of layers to use in the encoder and decoder [default: 1]
+    --src-lang=<str>            The source language to translate from [default: deu]
+    --tgt-lang=<str>            The target language to translate into [default: eng]
 """
 
 import math, time, sys, os
@@ -226,8 +229,8 @@ def train_model(model: NMT, train_data: List[Tuple[List[str]]], dev_data: List[T
     batch_size_val = params.get("batch_size_val", 64) # Batch size to use during validation eval
     lr = params.get("lr", 5e-3) # Specify the learning rate of the model
     grad_clip = params.get("grad_clip", 5) # Gradient clipping threshold
-    validation_niter = params.get("validation_niter", 150) # How often to evaluate on the validation data set
-    log_niter = params.get("log_niter", 50) # How often to print training log updates
+    validation_niter = params.get("validation_niter", 2000) # How often to evaluate on the validation data set
+    log_niter = params.get("log_niter", 200) # How often to print training log updates
     patience_lim = params.get("patience_lim", 5) # How many val evals to wait for the model to improve before
     # lowering the learning rate and training again
     max_trial_num = params.get("max_trial_num", 5) # How many times we will lower the learning rate before
@@ -241,15 +244,17 @@ def train_model(model: NMT, train_data: List[Tuple[List[str]]], dev_data: List[T
     # which means no initialization
     #### Training Parameters ####
 
-    model_save_path = os.path.join(model_save_dir, "model.bin") # Model save location
-
     print(f'Starting {model.name} training', file=sys.stderr)
+    model_save_path = os.path.join(model_save_dir, "model.bin") # Model save location
+    device = setup_device(try_gpu=True) # Train on a GPU if one is available
+    print(f'Model training will use the {device}', file=sys.stderr)
 
-    # try: # Try generating a compiled version of the model
-    #     model = torch.compile(model, backend="inductor")
-    #     print("NMT model compiled")
-    # except Exception as err:
-    #     print(f"Model compile not supported: {err}")
+    if device == "cuda": # Only try compiling the model iff training on the GPU
+        try: # Try generating a compiled version of the model
+            model = torch.compile(model)
+            print("NMT model compiled")
+        except Exception as err:
+            print(f"Model compile not supported: {err}")
 
     model.train() # Set the model to train mode, track gradients
 
@@ -257,9 +262,6 @@ def train_model(model: NMT, train_data: List[Tuple[List[str]]], dev_data: List[T
         print('Uniformly initialize parameters [-%f, +%f]' % (uniform_init, uniform_init), file=sys.stderr)
         for p in model.parameters():
             p.data.uniform_(-uniform_init, uniform_init)
-
-    device = setup_device(try_gpu=True) # Train on a GPU if one is available
-    print(f'Model training will use the {device}', file=sys.stderr)
 
     model = model.to(device) # Move the model to the designated device before training
 
@@ -396,13 +398,12 @@ def train_model(model: NMT, train_data: List[Tuple[List[str]]], dev_data: List[T
 ##############################################################################################################
 ### UNIT TESTING of the train function
 
-
 if __name__ == "__main__":
-    # args = docopt(__doc__) ## TODO: FIX THIS
-    args = {} # TEMP SOLUTION
+    args = docopt(__doc__)
     model_class = str(args.get("--model", "Fwd_RNN")) # Designate which model class to train
     embed_size = int(args.get("--embed-size", 256)) # Specify the word vec embedding size
-    hidden_size = int(args.get("--hidden-size", 256)) # Specify the hidden state size
+    hidden_size = int(args.get("--hidden-size", 256)) # Specify the hidden state
+    num_layers =  int(args.get("--num-layers", 1)) # Specify how many layers the model has
     src_lang = args.get("--src-lang", "deu") # Specify the source language (from)
     tgt_lang = args.get("--tgt-lang", "eng") # Specify the target language (to)
     assert src_lang != tgt_lang, "soruce language must differ from target language"
@@ -410,8 +411,8 @@ if __name__ == "__main__":
     print(f"Starting training process for {src_lang} to {tgt_lang}. Data set pre-processing...")
     start_time = time.time()
     # Build the data set for training and validation
-    train_data_src = read_corpus(src_lang, "train_small", is_tgt=False) # TODO: Use the actual training data
-    train_data_tgt = read_corpus(tgt_lang, "train_small", is_tgt=True) # TODO: Use the actual training data
+    train_data_src = read_corpus(src_lang, "validation", is_tgt=False) # TODO: Use the actual training data
+    train_data_tgt = read_corpus(tgt_lang, "validation", is_tgt=True) # TODO: Use the actual training data
     train_data = list(zip(train_data_src, train_data_tgt))
     print(f"  Training data processed: {time.time() - start_time:.1f}s")
     start_time = time.time() # Reset the timer start for next step
@@ -423,19 +424,18 @@ if __name__ == "__main__":
 
     vocab = Vocab.load(f"vocab/{src_lang}_to_{tgt_lang}_vocab")
 
-    # model = getattr(all_models, model_class)(embed_size, hidden_size, vocab) # Init the model to be trained
-    model = getattr(all_models, model_class).load("saved_models/Fwd_RNN/model.bin") # Pick up from where we left off
+    # Initialize the model to be trained
+    model = getattr(all_models, model_class)(embed_size, hidden_size, num_layers, vocab)
+    # model = getattr(all_models, model_class).load("saved_models/Fwd_RNN/model.bin") # Pick up from where we left off
     model_save_dir = f"saved_models/{model.name}/"
     Path(model_save_dir).mkdir(parents=True, exist_ok=True) # Make the save dir if not already there
     # Run a training pass for the model
-    train_model(model, train_data, dev_data, model_save_dir)
+    train_model(model, train_data, dev_data, model_save_dir, params={"log_niter": 1, "validation_niter": 5})
+
 
 
 ##############################################################################################################
-## print("Y_t.shape", Y_t.shape, file=sys.stderr)
-
 # TODO: Add a debug option which makes things test faster
-
 ## TODO: Clean up the below functions and other stuff
 ## TODO: Need to test running this
 
