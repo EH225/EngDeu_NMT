@@ -13,8 +13,6 @@ from .util import NMT, Hypothesis
 from vocab.vocab import Vocab
 
 
-
-
 class LSTM_AttNN(NMT):
     """
     Neural Machine Translation model comprised of:
@@ -40,7 +38,7 @@ class LSTM_AttNN(NMT):
         self.hidden_size = hidden_size # Record the size of the hidden states used by the LSTMs
         self.dropout_rate = dropout_rate # Record the dropout rate parameter
         self.vocab = vocab
-        self.name = "LSTM_Att"
+        self.name = "LSTM_AttNN"
 
         # Create a word-embedding mapping for the source language vocab
         self.source_embeddings = nn.Embedding(num_embeddings=len(vocab.src), embedding_dim=embed_size,

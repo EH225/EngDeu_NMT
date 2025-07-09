@@ -9,11 +9,14 @@ Usage:
 Options:
     -h --help                   Show this screen.
     --model=<str>               The name of the model to be trained
-    --embed-size=<int>          The size of the word vec embeddings [default: 256]
-    --hidden-size=<int>         The size of the hidden state [default: 256]
+    --embed-size=<int>          The size of the word vec embeddings [default: 512]
+    --hidden-size=<int>         The size of the hidden state [default: 512]
+    --dropout-rate=<float>      The dropout probability to apply when training [default: 0.3]
     --num-layers=<int>          The number of layers to use in the encoder and decoder [default: 1]
     --src-lang=<str>            The source language to translate from [default: deu]
     --tgt-lang=<str>            The target language to translate into [default: eng]
+    --warm-start=<bool>         If set to True, a saved model and optimizer state is used [default: True]
+    --debug=<bool>              If set to True, then run in debug mode [default: False]
 """
 
 import math, time, sys, os
@@ -202,6 +205,7 @@ def setup_device(try_gpu: bool = True):
 
     return device
 
+DEBUG_TRAIN_PARAMS = {"log_niter": 1, "validation_niter": 10, "uniform_init": 0.1}
 
 def train_model(model: NMT, train_data: List[Tuple[List[str]]], dev_data: List[Tuple[List[str]]],
                 model_save_dir: str, params: dict = None) -> None:
@@ -242,6 +246,7 @@ def train_model(model: NMT, train_data: List[Tuple[List[str]]], dev_data: List[T
     max_epochs = params.get("max_epochs", 10) # How many full passes through the training data are allowed
     uniform_init = params.get("uniform_init", 0) # How to initialize the parameters if specified, default to
     # which means no initialization
+    load_optimizer = params.get("load_optimizer", True) # Try to continue off from where we left off last
     #### Training Parameters ####
 
     print(f'Starting {model.name} training', file=sys.stderr)
@@ -266,6 +271,10 @@ def train_model(model: NMT, train_data: List[Tuple[List[str]]], dev_data: List[T
     model = model.to(device) # Move the model to the designated device before training
 
     optimizer = torch.optim.Adam(model.parameters(), lr=lr) # Initialize the optimizer for training
+    # Restore the optimizer's state from the last time we trained if possiable
+    if load_optimizer is True and 'model.bin.optim' in os.listdir(model_save_dir):
+        print("Using saved optimizer state to continue training")
+        optimizer.load_state_dict(torch.load(model_save_path + '.optim', weights_only=True))
 
     # Set up variables to track performance for logging and early stopping during model training
     num_trial = 0 # The number of times we've hit patience == patience_lim
@@ -284,9 +293,16 @@ def train_model(model: NMT, train_data: List[Tuple[List[str]]], dev_data: List[T
     cuml_pairs = 0 # How many total sentence pairs have been processed so far
     validation_num = 0 # The number of validation set evals computed
 
-    hist_valid_scores = []
     train_time = start_time = time.time()
     print('Starting maximum likelihood training...')
+
+    # Compute a validation set perplexity measure immediate before any training to set a baseline for
+    # comparison i.e. if we load a model from disk, don't re-save another unless it does better than the
+    # original one saved down. This prevents us from automatically saving a new model instance regardless
+    # on the first validation iteration
+    prior_best_ppl = eval_perplexity(model, dev_data, batch_size=batch_size_val)
+    training_ppl = pd.Series(dtype=float) # Track the training perplexity measures at each log update
+    validation_ppl = pd.Series(dtype=float) # Track the validation perplexity measures at each val update
 
     while True:
         epoch += 1 # Track how many full passes through the training data are made
@@ -324,6 +340,8 @@ def train_model(model: NMT, train_data: List[Tuple[List[str]]], dev_data: List[T
                        f"interval duration: {(time.time() - train_time):.1f}, total time elapsed: "
                        f"{time.time() - start_time:.1f}"
                        )
+                training_ppl.loc[train_iter] = math.exp(logging_loss / logging_tgt_words) # Log the perf
+
                 print(msg, file=sys.stderr) # Print a logging update during training to report progress
                 train_time = time.time() # Update the internal timer for the next iteration
                 logging_loss, logging_tgt_words, logging_pairs = 0, 0, 0 # Zero out, reset for next log print
@@ -341,13 +359,12 @@ def train_model(model: NMT, train_data: List[Tuple[List[str]]], dev_data: List[T
 
                 # Compute perplexity score on the dev_data (i.e. the evaluation set)
                 dev_ppl = eval_perplexity(model, dev_data, batch_size=batch_size_val)
-                prior_best_ppl = min(hist_valid_scores) if len(hist_valid_scores) > 0 else 99999999
                 msg = (f"  Validation iter {validation_num}, validation set ppl {dev_ppl:.1f}, prior best: "
                        f"{prior_best_ppl:.1f}")
                 print(msg, file=sys.stderr)
 
                 is_better = prior_best_ppl is None or dev_ppl < prior_best_ppl
-                hist_valid_scores.append(dev_ppl)
+                validation_ppl.loc[train_iter] = dev_ppl # Log the performance
 
                 if is_better: # Check if the current model is better than the prior ones, if so save
                     patience = 0 # Reset the early stopping patience counter, we've found a new best model
@@ -355,6 +372,9 @@ def train_model(model: NMT, train_data: List[Tuple[List[str]]], dev_data: List[T
                     model.save(model_save_path)
                     # Also save the optimizer's state
                     torch.save(optimizer.state_dict(), model_save_path + '.optim')
+                    # Also log the performance history over time
+                    training_ppl.to_csv(os.path.join(model_save_dir, "training_ppl.csv"))
+                    validation_ppl.to_csv(os.path.join(model_save_dir, "validation_ppl.csv"))
 
                 elif patience < patience_lim: # If things haven't improved, but we're still within the limit
                     patience += 1 # Incriment up the patience counter, when it gets too high without a model
@@ -400,20 +420,23 @@ def train_model(model: NMT, train_data: List[Tuple[List[str]]], dev_data: List[T
 
 if __name__ == "__main__":
     args = docopt(__doc__)
+    # TODO: Probably don't need these items here given the defaults above
     model_class = str(args.get("--model", "LSTM_Att")) # Designate which model class to train
-    embed_size = int(args.get("--embed-size", 256)) # Specify the word vec embedding size
-    hidden_size = int(args.get("--hidden-size", 256)) # Specify the hidden state
+    embed_size = int(args.get("--embed-size", 512)) # Specify the word vec embedding size
+    hidden_size = int(args.get("--hidden-size", 512)) # Specify the hidden state
     num_layers =  int(args.get("--num-layers", 1)) # Specify how many layers the model has
-    dropout =  int(args.get("--dropout-rate", 0.3)) # Specify the dropout rate for training
+    dropout =  float(args.get("--dropout-rate", 0.3)) # Specify the dropout rate for training
     src_lang = args.get("--src-lang", "deu") # Specify the source language (from)
     tgt_lang = args.get("--tgt-lang", "eng") # Specify the target language (to)
     assert src_lang != tgt_lang, "soruce language must differ from target language"
+    debug = args.get("--debug", False) # Specify if the training is to be run in debug mode
 
     print(f"Starting training process for {src_lang} to {tgt_lang}. Data set pre-processing...")
     start_time = time.time()
     # Build the data set for training and validation
-    train_data_src = read_corpus(src_lang, "validation", is_tgt=False) # TODO: Use the actual training data
-    train_data_tgt = read_corpus(tgt_lang, "validation", is_tgt=True) # TODO: Use the actual training data
+    data_set_name = "train_1" if debug is False else "train_debug"
+    train_data_src = read_corpus(src_lang, data_set_name, is_tgt=False)
+    train_data_tgt = read_corpus(tgt_lang, data_set_name, is_tgt=True)
     train_data = list(zip(train_data_src, train_data_tgt))
     print(f"  Training data processed: {time.time() - start_time:.1f}s")
     start_time = time.time() # Reset the timer start for next step
@@ -425,25 +448,26 @@ if __name__ == "__main__":
 
     vocab = Vocab.load(f"vocab/{src_lang}_to_{tgt_lang}_vocab")
 
-    # Initialize the model to be trained
-    model_kwargs = {"embed_size": embed_size, "hidden_size": hidden_size, "num_layers": num_layers,
-                    "dropout_rate": dropout, "vocab": vocab}
-    model = getattr(all_models, model_class)(**model_kwargs)
-    # model = getattr(all_models, model_class).load("saved_models/Fwd_RNN/model.bin") # Pick up from where we left off
+    train_params = {} if debug is False else DEBUG_TRAIN_PARAMS.copy()
+
+    if args["--warm-start"] == "True": # Load an existing model and continue training from where we left off
+        model = getattr(all_models, model_class).load(f"saved_models/{model_class}/model.bin")
+        train_params["uniform_init"] = 0 # Do NOT randomly initiate the model parameters
+        train_params["load_optimizer"] = True # Use the prior optimizer saved from training
+    else: # Initialize a new model instance to be trained
+        model_kwargs = {"embed_size": embed_size, "hidden_size": hidden_size, "num_layers": num_layers,
+                        "dropout_rate": dropout, "vocab": vocab}
+        model = getattr(all_models, model_class)(**model_kwargs)
+        train_params["uniform_init"] = 0.1 # Initialize weights randomly
+
     model_save_dir = f"saved_models/{model.name}/"
     Path(model_save_dir).mkdir(parents=True, exist_ok=True) # Make the save dir if not already there
+
     # Run a training pass for the model
-    train_model(model, train_data, dev_data, model_save_dir, params={"log_niter": 50, "validation_niter": 250,
-                                                                     "uniform_init": 0.1})
-
-
-# TODO: Figure out a way to add in the ability to load the optimizer state from disk and pass that in as well
-
-
+    train_model(model, train_data, dev_data, model_save_dir, params=train_params)
 
 
 ##############################################################################################################
-# TODO: Add a debug option which makes things test faster
 ## TODO: Clean up the below functions and other stuff
 ## TODO: Need to test running this
 
