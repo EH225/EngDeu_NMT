@@ -229,8 +229,8 @@ def train_model(model: NMT, train_data: List[Tuple[List[str]]], dev_data: List[T
     batch_size_val = params.get("batch_size_val", 64) # Batch size to use during validation eval
     lr = params.get("lr", 5e-3) # Specify the learning rate of the model
     grad_clip = params.get("grad_clip", 5) # Gradient clipping threshold
-    validation_niter = params.get("validation_niter", 2000) # How often to evaluate on the validation data set
-    log_niter = params.get("log_niter", 200) # How often to print training log updates
+    validation_niter = params.get("validation_niter", 300) # How often to evaluate on the validation data set
+    log_niter = params.get("log_niter", 50) # How often to print training log updates
     patience_lim = params.get("patience_lim", 3) # How many val evals to wait for the model to improve before
     # lowering the learning rate and training again
     max_trial_num = params.get("max_trial_num", 3) # How many times we will lower the learning rate before
@@ -239,7 +239,7 @@ def train_model(model: NMT, train_data: List[Tuple[List[str]]], dev_data: List[T
     # triggers the learning rate to be shrunk
     lr_decay = params.get("lr_decay", 0.5) # Multiplicative factor to use to shrink the learning rate when
     # patience hits the patience limit i.e. when we've evaluated patience limit times without improvement
-    max_epochs = params.get("max_epochs", 15) # How many full passes through the training data are allowed
+    max_epochs = params.get("max_epochs", 10) # How many full passes through the training data are allowed
     uniform_init = params.get("uniform_init", 0) # How to initialize the parameters if specified, default to
     # which means no initialization
     #### Training Parameters ####

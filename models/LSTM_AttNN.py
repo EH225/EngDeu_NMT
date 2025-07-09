@@ -13,20 +13,9 @@ from .util import NMT, Hypothesis
 from vocab.vocab import Vocab
 
 
-# TODO: clean this up
-# src_lang, tgt_lang = "deu", "eng"
-# vocab = Vocab.load(f"vocab/{src_lang}_to_{tgt_lang}_vocab")
-# model = LSTM_Att(32, 64, 0.2, vocab)
-# source = val_data_src[:8]
-# target = val_data_tgt[:8]
-# model.device = "cpu"
-# self = model
 
 
-# source_padded = sorted(source_padded, key=lambda x: len(x))
-
-
-class LSTM_Att(NMT):
+class LSTM_AttNN(NMT):
     """
     Neural Machine Translation model comprised of:
         - A bi-directional LSTM encoder
@@ -45,7 +34,7 @@ class LSTM_Att(NMT):
         vocab : Vocab
             A Vocabulary object containing source (src) and target (tgt) language vocabularies.
         """
-        super(LSTM_Att, self).__init__()
+        super(LSTM_AttNN, self).__init__()
         # assert isinstance(num_layers, int) and (1 <= num_layers <= 5), "num_layers must be an int [1, 5]"
         self.embed_size = embed_size  # Record the word vector embedding dimensionality
         self.hidden_size = hidden_size # Record the size of the hidden states used by the LSTMs
@@ -88,11 +77,16 @@ class LSTM_Att(NMT):
         # which is of size hidden_size * 2 and outputs c_0 for the decoder to initialize it
         self.c_projection = nn.Linear(in_features=hidden_size * 2, out_features=hidden_size, bias=False)
 
-        # This is used to compute e_{t,i} = h_{t}^{dec}^T @ W_{attProj} @ h_{i}^{enc} where h_{t}^{dec} is
-        # the current hidden state of the decoder LSTM at time step t which changes each step and h_{i}^{enc}
-        # is a concatenation of the forward and reverse hidden states of the bi-directional LSTM of the ith
-        # input word from the original text. These 2 together are used to compute the attention scores
-        self.att_projection = nn.Linear(in_features=hidden_size * 2, out_features=hidden_size, bias=False)
+        # These are used to compute e_{t,i} = Tanh(h_{i}^{enc}@W1 + h_{t}^{dec}@W2 + c_{t}^{dec}@W3) @ V
+        # with h_{i}^{enc} being the hidden state of the ith input source sentence word from the encoder,
+        # i.e. a concatenation of the forward and reverse hidden states from the bi-directional LSTM
+        # h_{t}^{dec} and c_{t}^{dec} being the current hidden state and cell of the decoder LSTM at the
+        # current timestemp t, which change each time step (while h_{i}^{enc} does not)
+        self.att_enc_hiddens_proj = nn.Linear(in_features=hidden_size * 2, out_features=hidden_size,
+                                              bias=False)
+        self.att_dec_hidden_proj = nn.Linear(in_features=hidden_size, out_features=hidden_size, bias=False)
+        self.att_dec_cell_proj = nn.Linear(in_features=hidden_size, out_features=hidden_size, bias=False)
+        self.att_v_proj = nn.Linear(in_features=hidden_size, out_features=1, bias=True)
 
         # Used to compute v_{t} = W_{u} @ u_{t} where u_{t} is the concatenation of h_{t}^{dec} i.e. the
         # hidden state of the decoder LSTM at time stamp t and also a_{t} which is the attention output
@@ -309,9 +303,8 @@ class LSTM_Att(NMT):
         combined_outputs = []
 
         # Apply the attention projection layer to enc_hiddens to compute enc_hiddens_proj
-        # Compute: e_{t,i} = h_{t}^{dec}^T @ W_{attProj} @ h_{i}^{enc}
-        enc_hiddens_proj = self.att_projection(enc_hiddens) # Outputs a tensor that is (b, src_len, h)
         # Compute this 1x per iteration here so that we do not need to duplicate the calculation each step
+        enc_hiddens_proj = self.att_enc_hiddens_proj(enc_hiddens) # (b, src_len 2*h) in, (b, src_len, h) out
 
         # Construct a tensor Y of observed translated sentences with a shape of (b, tgt_len, e) using the
         # target model embeddings where tgt_len = maximum target sentence length and e = embedding size.
@@ -328,10 +321,9 @@ class LSTM_Att(NMT):
             Ybar_t = torch.cat(tensors=(Y_t, o_prev), dim=1)
 
             # Pass in Ybar_t = concat(Y_t, o_{t-1}), dec_state = [h_{t-1}^{decoder}, c_{t-1}^{decoder}] along
-            # with enc_hiddens = all the encoder hidden states for each word in the x input, and also
-            # enc_hiddens_proj which is W_{attProj} @ h_{i}^{enc} and get back the new updated dec_state
-            # which is [h_{t}^{decoder}, c_{t}^{decoder}] along with the updated combined-output vector o_t
-            # and also e_t of size (b, src_len) which are the attention scores distribution.
+            # with enc_hiddens = all the encoder hidden states for each word in the x input, get back the new
+            # updated dec_state which is [h_{t}^{decoder}, c_{t}^{decoder}] along with the updated combined
+            # output vector o_t and also e_t of size (b, src_len) which are the attention scores distribution
             dec_state, o_t, e_t = self.step(Ybar_t, dec_state, enc_hiddens, enc_hiddens_proj, enc_masks)
 
             combined_outputs.append(o_t) # Append o_t to a list of all such vectors
@@ -358,16 +350,17 @@ class LSTM_Att(NMT):
             where b = batch size, e = embedding size, h = hidden size.
         dec_state : Tuple[torch.Tensor, torch.Tensor]
             A tuple of tensors both with shape (b, h), where b = batch size, h = hidden size. The first tensor
-            is the decoder's prev hidden state and the second tensor is the decoder's prev cell.
+            is the decoder's previous hidden state and the second tensor is the decoder's previous cell.
         enc_hiddens : torch.Tensor
             Encoder hidden states Tensor, with shape (b, src_len, h * 2), where b = batch size,
-            src_len = maximum source length, h = hidden size.
+            src_len = maximum source length, h = hidden size. h * 2 since the encoder is bi-directional.
         enc_hiddens_proj : torch.Tensor
             Encoder hidden states Tensor, projected from (h * 2) to h. Tensor is shape (b, src_len, h), where
-            b = batch size, src_len = maximum source length, h = hidden size.
+            b = batch size, src_len = maximum source length, h = hidden size. This is the same for every step
+            so we can compute it 1x and pass it in each time instead of duplicating the calc each step.
         enc_masks : torch.Tensor
             Tensor of sentence masks shape (b, src_len), where b = batch size, src_len is maximum source
-            length.
+            length denoting which elements of the input sentences are padding tokens (1 means <pad>).
 
         Returns
         -------
@@ -375,7 +368,7 @@ class LSTM_Att(NMT):
             Tuple of tensors representing the decoder's new hidden state and cell state, each of size (b, h).
         O_t : torch.Tensor
             Combined output Tensor at timestep t, shape (b, h), where b = batch size, h = hidden size. This
-            incorporates all the new info (Y_t, O_(t-1), attention scores, prior hidden state etc.)
+            incorporates all the new info (Y_t, O_(t-1) i.e. attention scores, prior hidden state etc.)
         e_t : torch.Tensor
             A tensor of shape (b, src_len) containing the computed attention score distribution.
         """
@@ -383,15 +376,20 @@ class LSTM_Att(NMT):
         # decoder cell outputs
         dec_state = self.decoder(Ybar_t, dec_state) # Update the decoder state (hidden_t, cell_t)
         dec_hidden, dec_cell = dec_state # Unpack into components
-        # Compute the attention scores e_t, a tensor of size (b, src_len). Here we are computing:
-        # e_ti = (h_{t}^{dec}.T) @ W_{attProj} @ h_{i}^{enc} with the last 2 terms already stored in
-        # enc_hiddens_proj. This computation is to be done in batches. dec_hidden is size (b, h) and
-        # enc_hiddens_proj is size (b, src_len, h) and we want an output of size (b, src_len) i.e. for each
-        # batch (sentence), a probability distribution over all the words in each sentence (src_len).
-        # We want to take dec_hidden for each sentence and multiply it with enc_hiddens_proj for each
-        # sentence which would result in a (1 x src_len) tensor per sentence. Use torch bmm to perform this
-        # batch matrix multiplication: (b x src_len x h) @ (b x h x 1) = (b x src_len x 1)
-        e_t = torch.bmm(enc_hiddens_proj, dec_hidden.unsqueeze(2)).squeeze(2) # Squeeze to remove last dim
+
+        # Compute the attention scores e_t, a tensor of size (b, src_len) which tells the model how much
+        # weight to put on each of the encoder hidden state representations of each input source sentence
+        # word. Here we are using "addative" attention which is a feed-forward NN layer to compute attention
+        # scores, which should be more expressive than other simplier calculation methods e.g. multiplicative
+        # attention. Here we compute Tanh(enc_hiddens_i @ W1 + dec_hidden @ W2 + dec_cell @ W3) @ V
+        shape = enc_hiddens_proj.shape # This is the desired shape for all 3 tensors being added together
+        # dec_hidden is (b, h) going in and comes out (b, h), duplicate along a middle dim for (b, src_len, h)
+        dec_hidden_proj = self.att_dec_hidden_proj(dec_hidden).unsqueeze(1).expand(shape)
+        # dec_cell is (b, h) going in and comes out (b, h), duplicate along a middle dim for (b, src_len, h)
+        dec_cell_proj = self.att_dec_cell_proj(dec_cell).unsqueeze(1).expand(shape)
+        # Tanh[(b, src_len, h)] @ (h x 1) so we get (b, src_len, 1) out, squeeze to remove the last dim
+        e_t = self.att_v_proj(F.tanh(enc_hiddens_proj + dec_hidden_proj + dec_cell_proj)).squeeze(-1)
+        # e_t is (b, src_len) which is what we want i.e. 1 attention weighting per word, per sentence
 
         if enc_masks is not None: # Set e_t to -inf where enc_masks has a 1, since 1 indicators padding
             e_t.data.masked_fill_(enc_masks.bool(), -float('inf'))
@@ -445,7 +443,7 @@ class LSTM_Att(NMT):
             enc_hiddens, dec_init_state = self.encode(src_sentence_tensor, [len(src_sentence)])
             dec_state = dec_init_state # Tuple((b, h), (b, h)) = (hidden, cell)
             o_prev = torch.zeros(1, self.hidden_size, device=self.device)
-            enc_hiddens_proj = self.att_projection(enc_hiddens) # Outputs a tensor that is (b=1, src_len, h)
+            enc_hiddens_proj = self.att_enc_hiddens_proj(enc_hiddens) # (b, src_len 2*h) -> (b, src_len, h))
             enc_masks = self.generate_sentence_masks(enc_hiddens, [src_sentence_tensor.shape[1]])
 
             hypothesis = [['<s>'], 0] # An output translation beginning with the start sentence token
@@ -471,7 +469,6 @@ class LSTM_Att(NMT):
                 Y_hat_t = torch.argmax(log_p_t) # Find which word has the highest log prob
                 hypothesis[0].append(self.vocab.tgt.id2word[Y_hat_t.item()]) # Record the predicted next word
 
-
                 hypothesis[1] += log_p_t[Y_hat_t] # Sum the log prob of all y-hats according to the model
                 # Update vars for next iteration
                 Y_t = Y_hat_t.unsqueeze(0) # For next iter, set the current y_hat output as the next y input
@@ -489,6 +486,7 @@ class LSTM_Att(NMT):
         # TODO: Add another sampling method for some threshold of the top words among those in the top k
         # percentile of the prob dist
         pass
+
 
     @classmethod
     def load(cls, model_path: str):
