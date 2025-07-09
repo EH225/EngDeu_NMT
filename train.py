@@ -231,9 +231,9 @@ def train_model(model: NMT, train_data: List[Tuple[List[str]]], dev_data: List[T
     grad_clip = params.get("grad_clip", 5) # Gradient clipping threshold
     validation_niter = params.get("validation_niter", 2000) # How often to evaluate on the validation data set
     log_niter = params.get("log_niter", 200) # How often to print training log updates
-    patience_lim = params.get("patience_lim", 5) # How many val evals to wait for the model to improve before
+    patience_lim = params.get("patience_lim", 3) # How many val evals to wait for the model to improve before
     # lowering the learning rate and training again
-    max_trial_num = params.get("max_trial_num", 5) # How many times we will lower the learning rate before
+    max_trial_num = params.get("max_trial_num", 3) # How many times we will lower the learning rate before
     # triggering early stopping i.e. if eval on the validation data and the results aren't better, then the
     # patience counter goes up. trial_num = how many times the patience counter has hit patience_lim which
     # triggers the learning rate to be shrunk
@@ -400,10 +400,11 @@ def train_model(model: NMT, train_data: List[Tuple[List[str]]], dev_data: List[T
 
 if __name__ == "__main__":
     args = docopt(__doc__)
-    model_class = str(args.get("--model", "Fwd_RNN")) # Designate which model class to train
+    model_class = str(args.get("--model", "LSTM_Att")) # Designate which model class to train
     embed_size = int(args.get("--embed-size", 256)) # Specify the word vec embedding size
     hidden_size = int(args.get("--hidden-size", 256)) # Specify the hidden state
     num_layers =  int(args.get("--num-layers", 1)) # Specify how many layers the model has
+    dropout =  int(args.get("--dropout-rate", 0.3)) # Specify the dropout rate for training
     src_lang = args.get("--src-lang", "deu") # Specify the source language (from)
     tgt_lang = args.get("--tgt-lang", "eng") # Specify the target language (to)
     assert src_lang != tgt_lang, "soruce language must differ from target language"
@@ -425,12 +426,19 @@ if __name__ == "__main__":
     vocab = Vocab.load(f"vocab/{src_lang}_to_{tgt_lang}_vocab")
 
     # Initialize the model to be trained
-    model = getattr(all_models, model_class)(embed_size, hidden_size, num_layers, vocab)
+    model_kwargs = {"embed_size": embed_size, "hidden_size": hidden_size, "num_layers": num_layers,
+                    "dropout_rate": dropout, "vocab": vocab}
+    model = getattr(all_models, model_class)(**model_kwargs)
     # model = getattr(all_models, model_class).load("saved_models/Fwd_RNN/model.bin") # Pick up from where we left off
     model_save_dir = f"saved_models/{model.name}/"
     Path(model_save_dir).mkdir(parents=True, exist_ok=True) # Make the save dir if not already there
     # Run a training pass for the model
-    train_model(model, train_data, dev_data, model_save_dir, params={"log_niter": 1, "validation_niter": 5})
+    train_model(model, train_data, dev_data, model_save_dir, params={"log_niter": 50, "validation_niter": 250,
+                                                                     "uniform_init": 0.1})
+
+
+# TODO: Figure out a way to add in the ability to load the optimizer state from disk and pass that in as well
+
 
 
 

@@ -17,7 +17,7 @@ class Fwd_RNN(NMT):
     """
     A simple forward RNN encoder and forward RNN decoder. One of the simpliest seq2seq structures there is.
     """
-    def __init__(self, embed_size: int, hidden_size: int, num_layers: int, vocab: Vocab):
+    def __init__(self, embed_size: int, hidden_size: int, num_layers: int, vocab: Vocab, *args, **kwargs):
         """
         Model 1a: Forward RNN model initialization.
 
@@ -33,6 +33,7 @@ class Fwd_RNN(NMT):
             A Vocabulary object containing source (src) and target (tgt) language vocabularies.
         """
         super(Fwd_RNN, self).__init__()
+        assert isinstance(num_layers, int) and (1 <= num_layers <= 5), "num_layers must be an int [1, 5]"
         self.num_layers = num_layers
         self.embed_size = embed_size  # Record the word vector embedding dimensionality
         self.hidden_size = hidden_size
@@ -51,7 +52,7 @@ class Fwd_RNN(NMT):
         ### Define the model architecture
 
         # Takes in the word embedding for each input word of the source language (each of size embed_size)
-        # and outputs a hidden state vector of size hidden_size, this layer is
+        # and outputs a hidden state vector of size hidden_size, this layer is encoder
         self.encoder = nn.RNN(input_size=embed_size, hidden_size=hidden_size, num_layers=num_layers,
                               nonlinearity="tanh",  bias=True, batch_first=True, bidirectional=False)
 
@@ -160,7 +161,7 @@ class Fwd_RNN(NMT):
         Returns
         -------
         dec_init_states : torch.Tensor
-        A tensor representing the decoder's initial hidden state for each sentence of size (b, h)
+            A tensor representing the decoder's initial hidden state for each sentence of size (b, h).
 
         """
         # Convert input sentences (padded to all be the same length src_len) stored as a tensor of size
@@ -299,7 +300,7 @@ class Fwd_RNN(NMT):
             src_sentence_tensor = self.vocab.src.to_input_tensor([src_sentence], self.device) # (b=1, src_len)
 
             # Pass it through the encoder to generate the decoder initial hidden state (h of t minus 1)
-            h_tm1 = self.encode(src_sentence_tensor, [len(src_sentence)]) # (batch_size=1, hidden_size)
+            h_tm1 = self.encode(src_sentence_tensor, [len(src_sentence)]) # (batch_size=1, layers, hidden)
             hypothesis = [['<s>'], 0] # An output translation beginning with the start sentence token
 
             # Use the last output word Y_hat_(t-1) as the next input word (Y_t) going into the decoder, we
@@ -313,10 +314,11 @@ class Fwd_RNN(NMT):
                 Y_t_embed = self.target_embeddings(Y_t) # (b=1, embed_size) convert to a word vector
 
                 # Compute an updated hidden state using the last y_hat and the prior hidden state
-                h_t = self.step(Y_t_embed, h_tm1) # (b=1, hidden_size)
+                h_t = self.step(Y_t_embed, h_tm1)
 
-                # Compute the log probabilities over all possiable next target words
-                log_p_t = F.log_softmax(self.target_vocab_projection(h_t), dim=-1).squeeze(0) # (b=1, |V|)
+                # Compute the log probabilities over all possiable next target words using the last hidden
+                # layer i.e. the one that is to be fed to self.target_vocab_projection, gives us (b, |V|)
+                log_p_t = F.log_softmax(self.target_vocab_projection(h_t[:, -1, :]), dim=-1).squeeze(0)
                 Y_hat_t = torch.argmax(log_p_t) # Find which word has the highest log prob
 
                 hypothesis[0].append(self.vocab.tgt.id2word[Y_hat_t.item()]) # Record the predicted next word
