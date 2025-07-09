@@ -134,7 +134,7 @@ class LSTM_Att(NMT): # TODO: INHERT FROM NMT
         """
         enc_masks = torch.zeros(enc_hiddens.size(0), enc_hiddens.size(1), dtype=torch.float)
         for e_id, src_len in enumerate(source_lengths):
-            enc_masks[e_id, src_len:] = 1 # Set the non-padding word tokens to have 1s rather thans 0s
+            enc_masks[e_id, src_len:] = 1 # Set the padding word tokens to have 1s rather thans 0s
         return enc_masks.to(self.device)
 
 
@@ -393,8 +393,7 @@ class LSTM_Att(NMT): # TODO: INHERT FROM NMT
         # batch matrix multiplication: (b x src_len x h) @ (b x h x 1) = (b x src_len x 1)
         e_t = torch.bmm(enc_hiddens_proj, dec_hidden.unsqueeze(2)).squeeze(2) # Squeeze to remove last dim
 
-        # Set e_t to -inf where enc_masks has 1
-        if enc_masks is not None:
+        if enc_masks is not None: # Set e_t to -inf where enc_masks has 1, since 1 indicators a padding token
             e_t.data.masked_fill_(enc_masks.bool(), -float('inf'))
 
         alpha_t = F.softmax(e_t, dim=-1) # Apply softmax to e_t within each sentence to yield alpha_t
@@ -415,81 +414,74 @@ class LSTM_Att(NMT): # TODO: INHERT FROM NMT
         # Returns the updated decoder state, the O_t combined outputs and the attention scores e_t
         return dec_state, O_t, e_t
 
-    def greedy_search():
-        pass
+
+    def greedy_search(self, src_sentence: List[str], max_decode_length: int = 70) -> Hypothesis:
+        """
+        Given a single source sentence, this method performs greedy search yielding a translation in the
+        target langauge by sequentially predicting the next token and always choosing the most probable
+        according to the model's y-hat output distribution over the target vocab.
+
+        Parameters
+        ----------
+        src_sentence : List[str]
+            A single input source sentence to perform greedy search on i.e. a list of word tokens.
+            e.g. ['▁Wo', '▁ist', '▁die', '▁Bank', '?']
+        max_decode_length : int, optional
+            The max number of time steps to run the decoder unroll aka the max decoder prediction size.
+            The default is 70 words.
+        Returns
+        -------
+        Hypothesis
+            A hypothesis with 2 fields:
+                - value: List[str]: The decoded target sentence, represented as a list of words.
+                - score: float: the log-likelihood of the decoded, predicted target sentence.
+        """
+        with torch.no_grad():  # no_grad() signals backend to throw away all gradients
+
+            # Convert the input source sentence into a tensor object of size (1, src_len) of word indices
+            src_sentence_tensor = self.vocab.src.to_input_tensor([src_sentence], self.device) # (b=1, src_len)
+
+            # Pass it through the encoder to generate the decoder initial hidden state (h of t minus 1)
+            enc_hiddens, dec_init_state = self.encode(src_sentence_tensor, [len(src_sentence)])
+            dec_state = dec_init_state # Tuple((b, h), (b, h)) = (hidden, cell)
+            o_prev = torch.zeros(1, self.hidden_size, device=self.device)
+            enc_hiddens_proj = self.att_projection(enc_hiddens) # Outputs a tensor that is (b=1, src_len, h)
+            enc_masks = self.generate_sentence_masks(enc_hiddens, [src_sentence_tensor.shape[1]])
+
+            hypothesis = [['<s>'], 0] # An output translation beginning with the start sentence token
+
+            # Use the last output word Y_hat_(t-1) as the next input word (Y_t) going into the decoder, we
+            # always start with the <s> sentence start token
+            Y_t = torch.tensor([self.vocab.tgt[hypothesis[0][-1]]], dtype=torch.long, device=self.device)
+
+            t = 0 # Track the time-step evolution of the decoder
+            # Iterate until we've a complete output translations or we reach the max output len
+            while hypothesis[0][-1] != "</s>" and t < max_decode_length:
+                t += 1 # Incriment up the timestep counter
+                Y_t_embed = self.target_embeddings(Y_t) # (b=1, embed_size) convert to a word vector
+
+                # Compute an updated hidden state using the last y_hat and the prior hidden state
+                Ybar_t = torch.cat(tensors=(Y_t_embed, o_prev), dim=1) # (b=1, e + h)
+                dec_state, o_t, e_t = self.step(Ybar_t, dec_state, enc_hiddens, enc_hiddens_proj, enc_masks)
+                # o_t is (b=1, h), e_t is (b=1, src_len)
+
+                # Compute the log probabilities over all possiable next target words using the last hidden
+                # layer i.e. the one that is to be fed to self.target_vocab_projection, gives us (b, |V|)
+                log_p_t = F.log_softmax(self.target_vocab_projection(o_t), dim=-1).squeeze(0) # (V)
+                Y_hat_t = torch.argmax(log_p_t) # Find which word has the highest log prob
+                hypothesis[0].append(self.vocab.tgt.id2word[Y_hat_t.item()]) # Record the predicted next word
+
+
+                hypothesis[1] += log_p_t[Y_hat_t] # Sum the log prob of all y-hats according to the model
+                # Update vars for next iteration
+                Y_t = Y_hat_t.unsqueeze(0) # For next iter, set the current y_hat output as the next y input
+                o_prev = o_t # Update the combined outputs
+                # dec_state was already updated in the step above
+
+        return hypothesis
 
     def beam_search():
         pass
-
-    # TODO: Need to finish fixing this
-    # def greedy_search(self, src_sentence: List[str], max_decode_length: int = 70) -> Hypothesis:
-    #     """
-    #     Given a single source sentence, this method performs greedy search yielding a translation in the
-    #     target langauge by sequentially predicting the next token and always choosing the most probable
-    #     according to the model's y-hat output distribution over the target vocab.
-
-    #     Parameters
-    #     ----------
-    #     src_sentence : List[str]
-    #         A single input source sentence to perform greedy search on i.e. a list of word tokens.
-    #     max_decode_length : int, optional
-    #         The max number of time steps to run the decoder unroll aka the max decoder prediction size.
-    #         The default is 70 words.
-    #     Returns
-    #     -------
-    #     Hypothesis
-    #         A hypothesis with 2 fields:
-    #             - value: List[str]: The decoded target sentence, represented as a list of words.
-    #             - score: float: the log-likelihood of the decoded, predicted target sentence.
-    #     """
-    #     with torch.no_grad():  # no_grad() signals backend to throw away all gradients
-
-    #         # Convert the input source sentence into a tensor object of size (1, src_len) of word indices
-    #         src_sentence_tensor = self.vocab.src.to_input_tensor([src_sentence], self.device) # (b=1, src_len)
-
-    #         # Pass it through the encoder to generate the decoder initial hidden state (h of t minus 1)
-    #         enc_hiddens, dec_init_state = self.encode(src_sentence_tensor, [len(src_sentence)])
-    #         dec_state = dec_init_state # Tuple((b, h), (b, h)) = (hidden, cell)
-    #         o_prev = torch.zeros(1, self.hidden_size, device=self.device)
-    #         enc_hiddens_proj = self.att_projection(enc_hiddens) # Outputs a tensor that is (b=1, src_len, h)
-    #         enc_masks = self.generate_sentence_masks(enc_hiddens, [len(src_sentence_tensor)]) # (b=1, src_len)
-
-    #         hypothesis = [['<s>'], 0] # An output translation beginning with the start sentence token
-
-    #         # Use the last output word Y_hat_(t-1) as the next input word (Y_t) going into the decoder, we
-    #         # always start with the <s> sentence start token
-    #         Y_t = torch.tensor([self.vocab.tgt[hypothesis[0][-1]]], dtype=torch.long, device=self.device)
-
-    #         t = 0 # Track the time-step evolution of the decoder
-    #         # Iterate until we've a complete output translations or we reach the max output len
-    #         while hypothesis[0][-1] != "</s>" and t < max_decode_length:
-    #             t += 1 # Incriment up the timestep counter
-    #             Y_t_embed = self.target_embeddings(Y_t) # (b=1, embed_size) convert to a word vector
-
-    #             # Compute an updated hidden state using the last y_hat and the prior hidden state
-    #             Ybar_t = torch.cat(tensors=(Y_t, o_prev), dim=1)
-    #             dec_state, o_t, e_t = self.step(Ybar_t, dec_state, enc_hiddens, enc_hiddens_proj, enc_masks)
-
-
-
-
-    #             # Compute the log probabilities over all possiable next target words using the last hidden
-    #             # layer i.e. the one that is to be fed to self.target_vocab_projection, gives us (b, |V|)
-    #             log_p_t = F.log_softmax(self.target_vocab_projection(h_t[:, -1, :]), dim=-1).squeeze(0)
-
-    #             prob = F.log_softmax(self.target_vocab_projection(o_t), dim=-1) # (b, tgt_len, V)
-
-
-
-
-    #             Y_hat_t = torch.argmax(log_p_t) # Find which word has the highest log prob
-
-    #             hypothesis[0].append(self.vocab.tgt.id2word[Y_hat_t.item()]) # Record the predicted next word
-    #             hypothesis[1] += log_p_t[Y_hat_t] # Sum the log prob of all y-hats according to the model
-    #             h_tm1 = h_t # Update the prior hidden state variable next iteration
-    #             Y_t = Y_hat_t.unsqueeze(0) # For next iter, set the current y_hat output as the next y input
-
-    #     return hypothesis
 
 
     @classmethod
