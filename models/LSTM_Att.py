@@ -13,24 +13,11 @@ from .util import NMT, Hypothesis
 from vocab.vocab import Vocab
 
 
-# TODO: clean this up
-# src_lang, tgt_lang = "deu", "eng"
-# vocab = Vocab.load(f"vocab/{src_lang}_to_{tgt_lang}_vocab")
-# model = LSTM_Att(32, 64, 0.2, vocab)
-# source = val_data_src[:8]
-# target = val_data_tgt[:8]
-# model.device = "cpu"
-# self = model
-
-
-# source_padded = sorted(source_padded, key=lambda x: len(x))
-
-
 class LSTM_Att(NMT):
     """
     Neural Machine Translation model comprised of:
         - A bi-directional LSTM encoder
-        - A LSTM decoder with attention
+        - A LSTM decoder with multiplicative attention
     """
     def __init__(self, embed_size: int, hidden_size: int, dropout_rate: float, vocab: Vocab, *args, **kwargs):
         """
@@ -52,6 +39,7 @@ class LSTM_Att(NMT):
         self.dropout_rate = dropout_rate # Record the dropout rate parameter
         self.vocab = vocab
         self.name = "LSTM_Att"
+        self.lang_pair = (vocab.src_lang, vocab.tgt_lang) # Record the language pair of the translation
 
         # Create a word-embedding mapping for the source language vocab
         self.source_embeddings = nn.Embedding(num_embeddings=len(vocab.src), embedding_dim=embed_size,
@@ -415,17 +403,24 @@ class LSTM_Att(NMT):
         return dec_state, O_t, e_t
 
 
-    def greedy_search(self, src_sentence: List[str], max_decode_length: int = 70) -> Hypothesis:
+    def greedy_search(self, src_sentence: List[str], k_pct: float = 0.05,
+                      max_decode_length: int = 70) -> Hypothesis:
         """
         Given a single source sentence, this method performs greedy search yielding a translation in the
-        target langauge by sequentially predicting the next token and always choosing the most probable
-        according to the model's y-hat output distribution over the target vocab.
+        target langauge by sequentially predicting the next token by randomly selecting among the top k
+        percentile of words according to the model's y-hat distribution over all possiable target sub-words.
+        If k_pct is let as None, then the most probable token is always choosen and the output has no
+        variation from one call to another.
 
         Parameters
         ----------
         src_sentence : List[str]
             A single input source sentence to perform greedy search on i.e. a list of word tokens.
             e.g. ['▁Wo', '▁ist', '▁die', '▁Bank', '?']
+        k_pct: float
+            This method build an output translation by randomly sampling from the top k% most likely words
+            according to their relative proportions. If set to None, then the highest probability word is
+            always selected which does not give any output variance.
         max_decode_length : int, optional
             The max number of time steps to run the decoder unroll aka the max decoder prediction size.
             The default is 70 words.
@@ -468,10 +463,21 @@ class LSTM_Att(NMT):
                 # Compute the log probabilities over all possiable next target words using the last hidden
                 # layer i.e. the one that is to be fed to self.target_vocab_projection, gives us (b, |V|)
                 log_p_t = F.log_softmax(self.target_vocab_projection(o_t), dim=-1).squeeze(0) # (V)
-                Y_hat_t = torch.argmax(log_p_t) # Find which word has the highest log prob
+                if k_pct is None: # Select the word with the highest modeled probability always
+                    Y_hat_t = torch.argmax(log_p_t) # Find which word has the highest log prob, idx = word id
+                else: # Randomly sample from the sub-words at or above the kth most probably percentile
+                    prob = torch.exp(log_p_t) # Exponentiate to convert to a probability distribution
+                    prob_sorted = prob.sort(descending=True) # Sort w/ the largest probs first
+                    bool_vec = prob_sorted.values.cumsum(0)<=k_pct # The entries in the top k %
+                    bool_vec[0] = True # Always have at least 1 entry set to true i.e. this happens if the
+                    # most likely word has a higher prob than k
+                    idx, prob = prob_sorted.indices[bool_vec], prob_sorted.values[bool_vec]
+                    prob /= prob.sum() # Re-normalize to 1
+                    Y_hat_t = torch.sample(idx, prob) # Sample the candidates that remain # TODO: Make sure this actually works
+
+
+
                 hypothesis[0].append(self.vocab.tgt.id2word[Y_hat_t.item()]) # Record the predicted next word
-
-
                 hypothesis[1] += log_p_t[Y_hat_t] # Sum the log prob of all y-hats according to the model
                 # Update vars for next iteration
                 Y_t = Y_hat_t.unsqueeze(0) # For next iter, set the current y_hat output as the next y input
@@ -479,6 +485,7 @@ class LSTM_Att(NMT):
                 # dec_state was already updated in the step above
 
         return hypothesis
+
 
     def beam_search():
         # TODO: Finish building out a beam-search method here

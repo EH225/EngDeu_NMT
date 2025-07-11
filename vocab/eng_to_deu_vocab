@@ -1,4 +1,6 @@
 {
+  "src_lang": "eng",
+  "tgt_lang": "deu",
   "src_word2id": {
     "<pad>": 0,
     "<s>": 1,

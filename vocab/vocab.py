@@ -1,11 +1,17 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+"""
+This module contains data structures for a language's vocab that map between sub-word strings and word id ints
+that are used in a language model's embedding layer to convert to word embedding vectors.
+
+When run, this module also trains sub-word tokenizer models for Eng and Deu and saves them to disk as well
+as cached Vocab data structures for Eng to Deu and Deu to Eng translation models.
+"""
 
 from __future__ import annotations
 from collections import Counter
-from docopt import docopt
 from itertools import chain
-import json, math
+import json
 import torch
 from typing import List, Tuple
 import sentencepiece as spm
@@ -18,14 +24,16 @@ import numpy as np
 def pad_sentences(sentences: List[List[str]], pad_token: str) -> List[List[str]]:
     """
     Pads a list of sentences on the right with a pad_token so that they are all of the same length i.e.
-    the length of the longest sentence in the collection.
+    the length of the longest sentence in the collection. This is used to help convert a batch of sentences
+    into a tensor (which requires equal length sentences).
 
-    This function can also be used when the inputs are List[List[int]] and int.
+    This function can also be used when the inputs are List[List[int]] and int i.e. when word index ints are
+    provided instead of sub-word tokens.
 
     Parameters
     ----------
     sentences : List[List[str]]
-        A list of sentences where each sentence is represented as a list of word tokens.
+        A list of sentences where each sentence is represented as a list of sub-word tokens.
     pad_token : str
         The padding token to be used to right-pad to make all sentences the same length.
 
@@ -41,29 +49,31 @@ def pad_sentences(sentences: List[List[str]], pad_token: str) -> List[List[str]]
     return padded_sentences
 
 
-def read_and_tokenize_corpus(file_path: str, language_abbv: str, vocab_size: int):
+def train_subword_tokenizer(file_path: str, language_abbv: str, vocab_size: int):
     """
-    Uses the SentencePiece package to tokenize and create a list of unique subwords for a given text corpus.
+    Uses the SentencePiece package to train a sub-word tokenizer model for a the specified language corpus
+    and saves the model to disk. Returns a list of unique sub-word tokens created in the model.
 
     Parameters
     ----------
     file_path : str
         File path to a corpus of text from a given input language to tokenize.
     language_abbv : str
-        A string abbreviation of the language for naming purposes.
+        A string abbreviation of the language for naming purposes e.g. "eng" or "deu".
     vocab_size : int
-        The max allowable size for the word token vocabulary created.
+        The desired sub-word token vocabulary size. Typically is around 20,000 to 30,000. For small text
+        corpuses, the vocab size specified might not be achievable and an error will be raised.
 
     Returns
     -------
     sp_list : List[List[str]]
-        A list of unique word tokenized derived from the corpus used for creating a vocab.
+        A list of unique sub-word tokens derived from the corpus used for creating a vocab.
     """
-    # Fit a tokenizer to the training data, create a set of word tokens for this language
+    # Fit a tokenizer to the training data, create a set of sub-word tokens for this language
     spm.SentencePieceTrainer.train(input=file_path, model_prefix=f"{language_abbv}/{language_abbv}",
                                    vocab_size=vocab_size)
     sp = spm.SentencePieceProcessor()
-    sp.load(f'{language_abbv}/{language_abbv}.model')  # loads {language_abbv}.model file generated above
+    sp.load(f'{language_abbv}/{language_abbv}.model')  # Loads {language_abbv}.model file generated above
     sp_list = [sp.id_to_piece(piece_id) for piece_id in range(sp.get_piece_size())] # The list of subwords
     return sp_list
 
@@ -88,7 +98,7 @@ class VocabEntry:
         if word2id is not None: # If a word-to-index mapping is provided then use it
             self.word2id = word2id
         else: # Otherwise create a new one
-            self.word2id = dict()
+            self.word2id = dict()  # Create a sub-word to word-id mapping dict
             self.word2id['<pad>'] = 0   # Pad Token
             self.word2id['<s>'] = 1 # Start Token
             self.word2id['</s>'] = 2    # End Token
@@ -295,17 +305,24 @@ class Vocab:
     """
     A data structure containing a VocabEntry for both the source (src) and target (tgt) language.
     """
-    def __init__(self, src_vocab: VocabEntry, tgt_vocab: VocabEntry):
+    def __init__(self, src_lang: str, tgt_lang: str, src_vocab: VocabEntry, tgt_vocab: VocabEntry):
         """
         Instantiates the combined bi-lingual Vocab object.
 
         Parameters
         ----------
+        src_lang : str
+            The abbreviation of the source language e.g. "eng" or "deu".
+        tgt_lang : str
+            The abbreviation of the target language e.g. "eng" or "deu".
         src_vocab : VocabEntry
             VocabEntry for source language.
         tgt_vocab : VocabEntry
             VocabEntry for target language.
         """
+        # Record the input source and target language and associated vocab object
+        self.src_lang = src_lang
+        self.tgt_lang = tgt_lang
         self.src = src_vocab
         self.tgt = tgt_vocab
 
@@ -340,7 +357,8 @@ class Vocab:
             File path for where to save the JSON vocab object.
         """
         with open(file_path, 'w') as f:
-            json.dump(dict(src_word2id=self.src.word2id, tgt_word2id=self.tgt.word2id), f, indent=2)
+            json.dump(dict(src_lang=self.src_lang, tgt_lang=self.tgt_lang,
+                           src_word2id=self.src.word2id, tgt_word2id=self.tgt.word2id), f, indent=2)
 
     @staticmethod
     def load(file_path: str) -> Vocab:
@@ -358,25 +376,112 @@ class Vocab:
             A Vocab object instance.
         """
         entry = json.load(open(file_path, 'r'))
-        return Vocab(VocabEntry(entry['src_word2id']), VocabEntry(entry['tgt_word2id']))
+        return Vocab(entry["src_lang"], entry["tgt_lang"],
+                     VocabEntry(entry['src_word2id']), VocabEntry(entry['tgt_word2id']))
+
 
     def __repr__(self) -> str:
         """
         String representation of Vocab object when called.
         """
-        return f"Vocab({len(self.src)} source words, {len(self.tgt)} target words)"
+        return (f"Vocab({len(self.src)} source ({self.src_lang}) words, "
+                f"{len(self.tgt)} target ({self.tgt_lang}) words)")
+
+
+
+
+
+class VocabOLD:
+    """
+    A data structure containing a VocabEntry for both the source (src) and target (tgt) language.
+    """
+    def __init__(self, src_vocab: VocabEntry, tgt_vocab: VocabEntry):
+        """
+        Instantiates the combined bi-lingual Vocab object.
+
+        Parameters
+        ----------
+        src_lang : str
+            The abbreviation of the source language e.g. "eng" or "deu".
+        tgt_lang : str
+            The abbreviation of the target language e.g. "eng" or "deu".
+        src_vocab : VocabEntry
+            VocabEntry for source language.
+        tgt_vocab : VocabEntry
+            VocabEntry for target language.
+        """
+        # Record the input source and target language and associated vocab object
+        self.src = src_vocab
+        self.tgt = tgt_vocab
+
+    @staticmethod
+    def build(soruce_word_tokens: List[str], target_word_tokens: List[str]) -> Vocab:
+        """
+        Constructs a Vocab object instance using a list of
+
+        Parameters
+        ----------
+        soruce_word_tokens : List[str]
+            A list of word tokens from the source language to construct a vocab out of.
+        target_word_tokens : List[str]
+            A list of word tokens from the target language to construct a vocab out of.
+
+        Returns
+        -------
+        Vocab
+            A Vocab object instance.
+        """
+        src = VocabEntry.from_token_list(soruce_word_tokens)
+        tgt = VocabEntry.from_token_list(target_word_tokens)
+        return Vocab(src, tgt)
+
+    def save(self, file_path: str) -> None:
+        """
+        Saves the Vocab object to a JSON dump.
+
+        Parameters
+        ----------
+        file_path : str
+            File path for where to save the JSON vocab object.
+        """
+        with open(file_path, 'w') as f:
+            json.dump(dict(src_lang=self.src_lang, tgt_lang=self.tgt_lang,
+                           src_word2id=self.src.word2id, tgt_word2id=self.tgt.word2id), f, indent=2)
+
+    @staticmethod
+    def load(file_path: str) -> Vocab:
+        """
+        Loads in a saved Vocab from disk stored as a JSON dumb.
+
+        Parameters
+        ----------
+        file_path : str
+            File path for where to read the JSON vocab object data.
+
+        Returns
+        -------
+        Vocab
+            A Vocab object instance.
+        """
+        entry = json.load(open(file_path, 'r'))
+        return VocabOLD(VocabEntry(entry['src_word2id']), VocabEntry(entry['tgt_word2id']))
+
+
+
 
 torch.serialization.add_safe_globals([VocabEntry, Vocab])
 
 if __name__ == '__main__':
     print("Running tokenization on eng/train.csv")
-    eng_tokens = read_and_tokenize_corpus("../dataset/eng/train.csv", "eng", 30000)
+    eng_tokens = train_subword_tokenizer("../dataset/eng/train.csv", "eng", 30000)
 
     print("Running tokenization on deu/train.csv")
-    deu_tokens = read_and_tokenize_corpus("../dataset/deu/train.csv", "deu", 30000)
+    deu_tokens = train_subword_tokenizer("../dataset/deu/train.csv", "deu", 30000)
 
+    # Build and cache a Vocab object for English to German translation models
     eng_to_deu_vocab = Vocab.build(eng_tokens, deu_tokens)
     eng_to_deu_vocab.save("eng_to_deu_vocab")
 
+    # Build and cache a Vocab object for German to English translation models
     deu_to_eng_vocab = Vocab.build(deu_tokens, eng_tokens)
     deu_to_eng_vocab.save("deu_to_eng_vocab")

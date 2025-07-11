@@ -17,7 +17,7 @@ class LSTM_AttNN(NMT):
     """
     Neural Machine Translation model comprised of:
         - A bi-directional LSTM encoder
-        - A LSTM decoder with attention
+        - A LSTM decoder with addative (single layer FFNN) attention
     """
     def __init__(self, embed_size: int, hidden_size: int, dropout_rate: float, vocab: Vocab, *args, **kwargs):
         """
@@ -39,6 +39,7 @@ class LSTM_AttNN(NMT):
         self.dropout_rate = dropout_rate # Record the dropout rate parameter
         self.vocab = vocab
         self.name = "LSTM_AttNN"
+        self.lang_pair = (vocab.src_lang, vocab.tgt_lang) # Record the language pair of the translation
 
         # Create a word-embedding mapping for the source language vocab
         self.source_embeddings = nn.Embedding(num_embeddings=len(vocab.src), embedding_dim=embed_size,
@@ -472,6 +473,8 @@ class LSTM_AttNN(NMT):
                 Y_t = Y_hat_t.unsqueeze(0) # For next iter, set the current y_hat output as the next y input
                 o_prev = o_t # Update the combined outputs
                 # dec_state was already updated in the step above
+
+                #TODO: Update this greedy search to match the other
 
         return hypothesis
 
