@@ -1,8 +1,12 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-This script reads in the parallel sentence data from csv stored in the dataset/paired_csv directory and splits
-it into separate csv files (train, validation, test) for English (eng) and Deutsch (deu) respectively.
+This script reads in the parallel sentence data set from csv stored in the dataset/paired_csv directory and
+splits it into separate csv files (train, validation, test) for English (eng) and Deutsch (deu) respectively.
+Because the training data set is so large, it is also split into 3 equal sized subsets. A debug train subset
+is also saved which is small and useful for testing.
+
+This data set was download from: https://www.kaggle.com/datasets/mohamedlotfy50/wmt-2014-english-german
 """
 
 import pandas as pd
@@ -49,8 +53,5 @@ if __name__ == "__main__":
             # Save the results split by language
             data["de"].to_csv(os.path.join("deu", new_file_name), index=False)
             data["en"].to_csv(os.path.join("eng", new_file_name), index=False)
-
-
-
 
         print(f"{file_name} processed and split into {new_file_name}")
