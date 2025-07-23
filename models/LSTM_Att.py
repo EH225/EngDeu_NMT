@@ -38,7 +38,7 @@ class LSTM_Att(NMT):
         self.hidden_size = hidden_size # Record the size of the hidden states used by the LSTMs
         self.dropout_rate = dropout_rate # Record the dropout rate parameter
         self.vocab = vocab
-        self.name = "LSTM_Att"
+        self.name = f"LSTM_Att"
         # self.lang_pair = (vocab.src_lang, vocab.tgt_lang) # Record the language pair of the translation
 
         # Create a word-embedding mapping for the source language vocab

@@ -327,7 +327,7 @@ if __name__ == "__main__":
     else: # Initialize a new model instance to be trained
         model_kwargs = {"embed_size": embed_size, "hidden_size": hidden_size, "num_layers": num_layers,
                         "dropout_rate": dropout, "vocab": vocab}
-        print("Instantiating model with kwargs:\n", model_kwargs)
+        print(f"Instantiating model={model.name} with kwargs:\n", model_kwargs)
         model = getattr(all_models, model_class)(**model_kwargs)
         if use_pretreind_embeddings is True:
             try: # Attempt to load the pre-trained embedding weights if possible
@@ -346,4 +346,3 @@ if __name__ == "__main__":
     # Run a training iter for the model
     print("train_params:\n", train_params)
     train_model(model, train_data, dev_data, model_save_dir, params=train_params)
-

@@ -38,7 +38,7 @@ class Fwd_RNN(NMT):
         self.embed_size = embed_size  # Record the word vector embedding dimensionality
         self.hidden_size = hidden_size
         self.vocab = vocab
-        self.name = f"Fwd_RNN_{self.num_layers}"
+        self.name = f"Fwd_RNN_{num_layers}"
 
         # Create a word-embedding mapping for the source language vocab
         self.source_embeddings = nn.Embedding(num_embeddings=len(vocab.src), embedding_dim=embed_size,
