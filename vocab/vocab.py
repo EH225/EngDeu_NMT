@@ -86,12 +86,14 @@ class VocabEntry:
     """
     Vocabulary Entry data structure for 1 language (i.e. either the source or target).
     """
-    def __init__(self, word2id: dict = None):
+    def __init__(self, lang: str, word2id: dict = None):
         """
         Instantiates a VocabEntry instance.
 
         Parameters
         ----------
+        lang : str
+            The language of the vocabulary e.g. "eng" or "deu".
         word2id : dict, optional
             An optional dictionary mapping of words to indices. The default is None.
         """
@@ -105,6 +107,7 @@ class VocabEntry:
             self.word2id['<unk>'] = 3   # Unknown Token
         self.unk_id = self.word2id['<unk>'] # Record the index id of the unknown token
         self.id2word = {v: k for k, v in self.word2id.items()} # Add a reverse mapping from int to token
+        self.lang = lang # Record the language of this vocabulary
 
     def __getitem__(self, word: str) -> int:
         """
@@ -281,7 +284,7 @@ class VocabEntry:
         return vocab_entry
 
     @staticmethod
-    def from_token_list(word_token_list: List[str]) -> VocabEntry:
+    def from_token_list(lang: str, word_token_list: List[str]) -> VocabEntry:
         """
         Given a list of word tokens, construct a Vocab Entry.
 
@@ -295,7 +298,7 @@ class VocabEntry:
         vocab_entry : VocabEntry
             A VocabEntry instance produced from the provided word_token_list.
         """
-        vocab_entry = VocabEntry() # Instantiate a new object instance
+        vocab_entry = VocabEntry(lang=lang) # Instantiate a new object instance
         for subword in word_token_list: # Fill the vocab with the word tokens provided
             vocab_entry.add(subword)
         return vocab_entry
@@ -327,12 +330,17 @@ class Vocab:
         self.tgt = tgt_vocab
 
     @staticmethod
-    def build(soruce_word_tokens: List[str], target_word_tokens: List[str]) -> Vocab:
+    def build(src_lang: str, tgt_lang: str, soruce_word_tokens: List[str],
+              target_word_tokens: List[str]) -> Vocab:
         """
         Constructs a Vocab object instance using a list of
 
         Parameters
         ----------
+        src_lang : str
+            The abbreviation of the source language e.g. "eng" or "deu".
+        tgt_lang : str
+            The abbreviation of the target language e.g. "eng" or "deu".
         soruce_word_tokens : List[str]
             A list of word tokens from the source language to construct a vocab out of.
         target_word_tokens : List[str]
@@ -343,9 +351,9 @@ class Vocab:
         Vocab
             A Vocab object instance.
         """
-        src = VocabEntry.from_token_list(soruce_word_tokens)
-        tgt = VocabEntry.from_token_list(target_word_tokens)
-        return Vocab(src, tgt)
+        src = VocabEntry.from_token_list(src_lang, soruce_word_tokens)
+        tgt = VocabEntry.from_token_list(tgt_lang, target_word_tokens)
+        return Vocab(src_lang, tgt_lang, src, tgt)
 
     def save(self, file_path: str) -> None:
         """
@@ -377,8 +385,8 @@ class Vocab:
         """
         entry = json.load(open(file_path, 'r'))
         return Vocab(entry["src_lang"], entry["tgt_lang"],
-                     VocabEntry(entry['src_word2id']), VocabEntry(entry['tgt_word2id']))
-
+                     VocabEntry(entry["src_lang"], entry['src_word2id']),
+                     VocabEntry(entry["tgt_lang"], entry['tgt_word2id']))
 
     def __repr__(self) -> str:
         """
@@ -388,100 +396,19 @@ class Vocab:
                 f"{len(self.tgt)} target ({self.tgt_lang}) words)")
 
 
-
-
-
-class VocabOLD:
-    """
-    A data structure containing a VocabEntry for both the source (src) and target (tgt) language.
-    """
-    def __init__(self, src_vocab: VocabEntry, tgt_vocab: VocabEntry):
-        """
-        Instantiates the combined bi-lingual Vocab object.
-
-        Parameters
-        ----------
-        src_lang : str
-            The abbreviation of the source language e.g. "eng" or "deu".
-        tgt_lang : str
-            The abbreviation of the target language e.g. "eng" or "deu".
-        src_vocab : VocabEntry
-            VocabEntry for source language.
-        tgt_vocab : VocabEntry
-            VocabEntry for target language.
-        """
-        # Record the input source and target language and associated vocab object
-        self.src = src_vocab
-        self.tgt = tgt_vocab
-
-    @staticmethod
-    def build(soruce_word_tokens: List[str], target_word_tokens: List[str]) -> Vocab:
-        """
-        Constructs a Vocab object instance using a list of
-
-        Parameters
-        ----------
-        soruce_word_tokens : List[str]
-            A list of word tokens from the source language to construct a vocab out of.
-        target_word_tokens : List[str]
-            A list of word tokens from the target language to construct a vocab out of.
-
-        Returns
-        -------
-        Vocab
-            A Vocab object instance.
-        """
-        src = VocabEntry.from_token_list(soruce_word_tokens)
-        tgt = VocabEntry.from_token_list(target_word_tokens)
-        return Vocab(src, tgt)
-
-    def save(self, file_path: str) -> None:
-        """
-        Saves the Vocab object to a JSON dump.
-
-        Parameters
-        ----------
-        file_path : str
-            File path for where to save the JSON vocab object.
-        """
-        with open(file_path, 'w') as f:
-            json.dump(dict(src_lang=self.src_lang, tgt_lang=self.tgt_lang,
-                           src_word2id=self.src.word2id, tgt_word2id=self.tgt.word2id), f, indent=2)
-
-    @staticmethod
-    def load(file_path: str) -> Vocab:
-        """
-        Loads in a saved Vocab from disk stored as a JSON dumb.
-
-        Parameters
-        ----------
-        file_path : str
-            File path for where to read the JSON vocab object data.
-
-        Returns
-        -------
-        Vocab
-            A Vocab object instance.
-        """
-        entry = json.load(open(file_path, 'r'))
-        return VocabOLD(VocabEntry(entry['src_word2id']), VocabEntry(entry['tgt_word2id']))
-
-
-
-
 torch.serialization.add_safe_globals([VocabEntry, Vocab])
 
 if __name__ == '__main__':
     print("Running tokenization on eng/train.csv")
-    eng_tokens = train_subword_tokenizer("../dataset/eng/train.csv", "eng", 30000)
+    eng_tokens = train_subword_tokenizer("dataset/eng/train.csv", "eng", 30000)
 
     print("Running tokenization on deu/train.csv")
-    deu_tokens = train_subword_tokenizer("../dataset/deu/train.csv", "deu", 30000)
+    deu_tokens = train_subword_tokenizer("dataset/deu/train.csv", "deu", 30000)
 
     # Build and cache a Vocab object for English to German translation models
-    eng_to_deu_vocab = Vocab.build(eng_tokens, deu_tokens)
+    eng_to_deu_vocab = Vocab.build("eng", "deu", eng_tokens, deu_tokens)
     eng_to_deu_vocab.save("eng_to_deu_vocab")
 
     # Build and cache a Vocab object for German to English translation models
-    deu_to_eng_vocab = Vocab.build(deu_tokens, eng_tokens)
+    deu_to_eng_vocab = Vocab.build("deu", "eng", deu_tokens, eng_tokens)
     deu_to_eng_vocab.save("deu_to_eng_vocab")

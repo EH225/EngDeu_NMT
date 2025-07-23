@@ -284,6 +284,7 @@ if __name__ == "__main__":
            "version 1.0.0")
     assert(torch.__version__ >= "1.0.0"), msg
 
+    ### Ingest input kwargs for training
     args = docopt(__doc__)
     model_class = str(args.get("--model", "LSTM_Att")) # Designate which model class to train
     embed_size = int(args.get("--embed-size", 512)) # Specify the word vec embedding size
@@ -296,8 +297,9 @@ if __name__ == "__main__":
     train_set = int(args.get("--train-set", 1)) # Specify which training set to use {1, 2, 3}
     use_pretreind_embeddings = args.get("--pt-embeddings", "True") == "True"
     assert src_lang != tgt_lang, "soruce language must differ from target language"
-    debug = args.get("--debug", False) # Specify if the training is to be run in debug mode
+    debug = args.get("--debug", "False") == "True" # Specify if the training is to be run in debug mode
 
+    ### Read in the data sets required to train the model
     print(f"Starting training process for {src_lang} to {tgt_lang}. Data set pre-processing...")
     start_time = time.time()
     # Build the data set for training and validation
@@ -313,10 +315,12 @@ if __name__ == "__main__":
     dev_data = list(zip(val_data_src, val_data_tgt))
     print(f"  Validation data processed: {time.time() - start_time:.1f}s")
 
+    ### Load in the pre-trained vocav model
     vocab = Vocab.load(f"vocab/{src_lang}_to_{tgt_lang}_vocab")
 
     train_params = {} if debug is False else DEBUG_TRAIN_PARAMS.copy()
 
+    ### Determine where to save the model during training
     model_save_dir = util.get_model_save_dir(model_class, src_lang, tgt_lang, debug)
     Path(model_save_dir).mkdir(parents=True, exist_ok=True) # Make the save dir if not already there
 
@@ -327,8 +331,8 @@ if __name__ == "__main__":
     else: # Initialize a new model instance to be trained
         model_kwargs = {"embed_size": embed_size, "hidden_size": hidden_size, "num_layers": num_layers,
                         "dropout_rate": dropout, "vocab": vocab}
-        print(f"Instantiating model={model.name} with kwargs:\n", model_kwargs)
         model = getattr(all_models, model_class)(**model_kwargs)
+        print(f"Instantiating model={model.name} with kwargs:\n", model_kwargs)
         if use_pretreind_embeddings is True:
             try: # Attempt to load the pre-trained embedding weights if possible
                 parmas = torch.load(f"saved_models/embeddings/{src_lang}_{embed_size}",
