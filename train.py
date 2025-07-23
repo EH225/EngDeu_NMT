@@ -333,13 +333,15 @@ if __name__ == "__main__":
             try: # Attempt to load the pre-trained embedding weights if possible
                 parmas = torch.load(f"saved_models/embeddings/{src_lang}_{embed_size}",
                                     map_location=lambda storage, loc: storage, weights_only=False)
-                model.source_embeddings.weight = parmas['state_dict']['weight']
+                model.source_embeddings.weight = torch.nn.Parameter(parmas['state_dict']['weight'])
 
                 parmas = torch.load(f"saved_models/embeddings/{tgt_lang}_{embed_size}",
                                     map_location=lambda storage, loc: storage, weights_only=False)
-                model.target_embeddings.weight = parmas['state_dict']['weight']
-            except:
+                model.target_embeddings.weight = torch.nn.Parameter(parmas['state_dict']['weight'])
+                print("Using pre-trained word embeddings of size: {model.embed_size}")
+            except Exception as e:
                 print("Could not load pre-trained word embedding weights")
+                print(e)
 
     # Run a training iter for the model
     print("train_params:\n", train_params)

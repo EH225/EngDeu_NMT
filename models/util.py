@@ -53,6 +53,15 @@ class NMT(nn.Module, ABC):
     def save(self, model_path: str):
         pass
 
+    def size(self):
+        """
+        Prints out key info about the model's size.
+        """
+        print(f"model: {self.name}")
+        print(f"embed_size: {self.embed_size}")
+        print(f"hidden_size: {self.hidden_size}")
+        if hasattr(self, "num_layers"):
+            print(f"num_layers: {self.num_layers}")
 
 # TODO: move common stuff here that we don't need to define in each model
 # Define what methods need to be implemented by all models so that the evaluation tools are consistent etc.

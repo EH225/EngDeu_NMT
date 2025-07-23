@@ -39,7 +39,7 @@ class LSTM_Att(NMT):
         self.dropout_rate = dropout_rate # Record the dropout rate parameter
         self.vocab = vocab
         self.name = "LSTM_Att"
-        self.lang_pair = (vocab.src_lang, vocab.tgt_lang) # Record the language pair of the translation
+        # self.lang_pair = (vocab.src_lang, vocab.tgt_lang) # Record the language pair of the translation
 
         # Create a word-embedding mapping for the source language vocab
         self.source_embeddings = nn.Embedding(num_embeddings=len(vocab.src), embedding_dim=embed_size,
@@ -99,6 +99,7 @@ class LSTM_Att(NMT):
         # Create a dropout layer for the attention with a probability of dropout_rate of an element being
         # zeroed during training, this helps with regularization in the network training
         self.dropout = nn.Dropout(p=dropout_rate)
+
 
     def generate_sentence_masks(self, enc_hiddens: torch.Tensor, source_lengths: List[int]) -> torch.Tensor:
         """
@@ -473,9 +474,7 @@ class LSTM_Att(NMT):
                     # most likely word has a higher prob than k
                     idx, prob = prob_sorted.indices[bool_vec], prob_sorted.values[bool_vec]
                     prob /= prob.sum() # Re-normalize to 1
-                    Y_hat_t = torch.sample(idx, prob) # Sample the candidates that remain # TODO: Make sure this actually works
-
-
+                    Y_hat_t = idx[prob.multinomial(num_samples=1, replacement=True).item()]
 
                 hypothesis[0].append(self.vocab.tgt.id2word[Y_hat_t.item()]) # Record the predicted next word
                 hypothesis[1] += log_p_t[Y_hat_t] # Sum the log prob of all y-hats according to the model
@@ -489,12 +488,6 @@ class LSTM_Att(NMT):
 
     def beam_search():
         # TODO: Finish building out a beam-search method here
-        pass
-
-    def k_pct_greedy_search(self, src_sentence: List[str], prob: float = 0.2,
-                             max_decode_length: int = 70) -> Hypothesis:
-        # TODO: Add another sampling method for some threshold of the top words among those in the top k
-        # percentile of the prob dist
         pass
 
     @classmethod
