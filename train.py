@@ -85,7 +85,7 @@ def train_model(model: NMT, train_data: List[Tuple[List[str]]], dev_data: List[T
     log_niter = params.get("log_niter", 100) # How often to print training log updates
     patience_lim = params.get("patience_lim", 3) # How many val evals to wait for the model to improve before
     # lowering the learning rate and training again
-    max_trial_num = params.get("max_trial_num", 2) # How many times we will lower the learning rate before
+    max_trial_num = params.get("max_trial_num", 3) # How many times we will lower the learning rate before
     # triggering early stopping i.e. if eval on the validation data and the results aren't better, then the
     # patience counter goes up. trial_num = how many times the patience counter has hit patience_lim which
     # triggers the learning rate to be shrunk
@@ -270,9 +270,6 @@ def train_model(model: NMT, train_data: List[Tuple[List[str]]], dev_data: List[T
             if epoch == max_epochs:
                 print('Reached maximum number of epochs!', file=sys.stderr)
                 return
-
-
-## TODO: Make this easier to do, create some helper functions for reading in the data set
 
 
 ##############################################################################################################
