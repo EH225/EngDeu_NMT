@@ -291,7 +291,7 @@ def run_model_training(model_args: Dict = None, train_params: Dict = None):
 
     """
     model_args = {} if model_args is None else model_args
-    train_params = {} if train_params is None else train_params
+    train_params = {} if train_params is None else train_params.copy()
 
     # 0). Preliminary argument processing
     model_class = str(model_args.get("model", "LSTM_Att")) # Designate which model class to train
@@ -311,7 +311,7 @@ def run_model_training(model_args: Dict = None, train_params: Dict = None):
     assert isinstance(train_sets, list), "train_sets must be a list of training sets to use or an int"
     use_pretreind_embeddings = model_args.get("pt_embeddings", True)
     assert isinstance(use_pretreind_embeddings, bool), "pt_embeddings must be a bool if provided"
-    debug = args.get("debug", False) # Specify if the training is to be run in debug mode
+    debug = model_args.get("debug", False) # Specify if the training is to be run in debug mode
     assert isinstance(debug, bool), "debug must be a bool if provided"
 
     for train_set in train_sets: # Loop over all the training sets specified and train
