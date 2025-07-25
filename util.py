@@ -7,6 +7,7 @@ import sentencepiece as spm
 import pandas as pd
 import numpy as np
 import math
+import torch.nn as nn
 
 
 def get_model_save_dir(model_class: str, src_lang: str, tgt_lang: str, debug: bool = False) -> str:
@@ -173,3 +174,21 @@ def tokens_to_str(tokenized_sentence: List[str]) -> str:
     if tokenized_sentence[0] == "<s>": # Remove the end token if present
         tokenized_sentence.pop(0)
     return ''.join(tokenized_sentence).replace('▁', ' ').strip()
+
+
+def count_trainable_parameters(model: nn.Module) -> int:
+    """
+    Counts the total number of trainable parameters in a PyTorch model.
+
+    Parameters
+    ----------
+    model : nn.Module
+        The model whose parameters are to be counted.
+
+    Returns
+    -------
+    int
+        The total number of trainable parameters.
+
+    """
+    return sum(p.numel() for p in model.parameters() if p.requires_grad)

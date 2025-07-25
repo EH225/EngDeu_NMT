@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 This module contains helper functions for model evaluation e.g. functions to compute model perplexity and
-BLEU scores etc.
+BLEU scores etc. and also model summary comparison tables.
 """
 
 import models.all_models as all_models
@@ -12,9 +12,12 @@ import numpy as np
 import sacrebleu
 import matplotlib.pyplot as plt
 from models.util import Hypothesis, NMT
-import torch
+import torch, os
 import util
 
+#####################################################
+### Model Evaluation Metric Calculation Functions ###
+#####################################################
 
 def compute_perplexity(model: NMT, eval_data: List[Tuple[List[str]]], batch_size: int = 32) -> float:
     """
@@ -25,7 +28,8 @@ def compute_perplexity(model: NMT, eval_data: List[Tuple[List[str]]], batch_size
     model : NMT
         A NMT model instance to be evaluated.
     eval_data : List[Tuple[List[str]]]
-        A list of (src_sentence, tgt_sentence) list of tuples containing source and target sentences.
+        A list of (src_sentence, tgt_sentence) list of tuples containing source and target sentences stored
+        as lists of word-tokens.
     batch_size : int, optional
         The batch size to use when iterating over eval_data. The default is 32.
 
@@ -56,7 +60,7 @@ def compute_perplexity(model: NMT, eval_data: List[Tuple[List[str]]], batch_size
     return ppl
 
 
-def compute_corpus_bleu_score(references: List[List[str]], hypotheses: List[List[str]]) -> float:
+def compute_corpus_bleu_score(model: NMT, eval_data: List[Tuple[List[str]]]) -> float:
     """
     Computes a corpus-level BLEU score given a set of references (gold-standard translations) and hypotheses
     i.e. translation outputs from the model. Compares how similar they are to one another as a measure of
@@ -79,72 +83,140 @@ def compute_corpus_bleu_score(references: List[List[str]], hypotheses: List[List
     float
         A corpus-level BLEU score.
     """
+    references, hypotheses = [], []
+    for src_sentence, tgt_sentence in eval_data: # Iterate through the data set provided
+        # Compute what a model-generated translation of each input sentence
+        hypotheses.append(model.greedy_search(src_sentence, max_decode_length=len(src_sentence) * 2)[0])
+        references.append(tgt_sentence) # Record the "gold-standard" translation of this sentence
+
     # Detokenize the subword pieces to get full sentences
     detokenized_refs = [util.tokens_to_str(s) for s in references]
     detokenized_hyps = [util.tokens_to_str(hyp) for hyp in hypotheses]
-    # sacreBLEU can take multiple references (golden example per sentence) but we only feed it one
+    # sacreBLEU can take multiple references (golden example per sentence) but we only feed it one per output
     bleu = sacrebleu.corpus_bleu(detokenized_hyps, [detokenized_refs])
     return bleu.score
 
 
-def generate_model_summary(model: NMT) -> pd.Series:
-    pass # TODO: Run the model evaluation for 1 model
+# TODO: Add more automatic evaluation metrics here as well, make sure they all follow the same input conventions
 
 
-def generate_model_summary_table(model_names: List[str], data_set: List[Tuple[List[str]]]) -> pd.DataFrame:
-    save_dir = "saved_models/"
-    summary_table = pd.DataFrame()
+######################################################
+### Model Performance Summary Generation Functions ###
+######################################################
 
-    for model_name in model_names: # Try to generate data for this model if possible
-        # Look for the DeuEng version of the model
-        model = None
-        model_smry = generate_model_summary(model, data_set)
-        summary_table.loc[model_name, :] = model_smry
+def build_eval_dataset(data_set_name: str) -> Dict[str, List[Tuple[List[str]]]]:
+    """
+    Builds an evaluation data set i.e. a dictionary containing the dataset to be used for automatic model
+    evaluation and expected by generate_model_summary_table. The keys of the dict are"EngDeu" and "DeuEng"
+    for the 2 directions of translation and the values are a list of parallel sentence tuples
+    (src_sentence, tgt_sentence) where each sentence is recorded as a list of sub-word tokens.
 
-        # Look for the EngDeu version of the model
-        model = None
+    Parameters
+    ----------
+    data_set_name : str
+        The name of the data set to read from disk and generate an eval dataset for e.g. "train_1" or "test".
+
+    Returns
+    -------
+    Dict[str, List[Tuple[List[str]]]]
+       A dictionary containing the dataset to be used for automatic model evaluation and expected by
+       generate_model_summary_table. The keys of the dict are"EngDeu" and "DeuEng" for the 2 directions of
+       translation and the values are a list of parallel sentence tuples (src_sentence, tgt_sentence) where
+       each sentence is recorded as a list of sub-word tokens.
+    """
+    eval_data_dict = {}
+
+    # EngDeu evaluation data set
+    src_data = util.read_corpus("eng", data_set_name, is_tgt=False)[:25] # TODO: TEMP
+    tgt_data = util.read_corpus("deu", data_set_name, is_tgt=True)[:25] # TODO: TEMP
+    eval_data_dict["EngDeu"] = list(zip(src_data, tgt_data))
+
+    # DeuEng evaluation data set
+    src_data = util.read_corpus("deu", data_set_name, is_tgt=False)[:25] # TODO: TEMP
+    tgt_data = util.read_corpus("eng", data_set_name, is_tgt=True)[:25] # TODO: TEMP
+    eval_data_dict["DeuEng"] = list(zip(src_data, tgt_data))
+
+    return eval_data_dict
 
 
+def generate_eval_summary(model: NMT, eval_data: List[Tuple[List[str]]]) -> pd.Series:
+    # TODO: Add a doc string - Compute evaluation metrics for this model
+    eval_summary = pd.Series(dtype=float)
+    eval_summary.loc["Perplexity"] = compute_perplexity(model, eval_data)
+    eval_summary.loc["BLEU"] = compute_corpus_bleu_score(model, eval_data)
+    # TODO: Add other evaluation metrics here
+    return eval_summary
 
-        # Look for the model
-        # load the model
-        # Count the parameters
-        pass
 
-    # Loop over the saved model repo
-    # Load in each model
-    # Populate entries in the table
+def generate_model_summary_table(model_classes: List[str],
+                                 eval_data_dict: Dict[str, List[Tuple[List[str]]]]) -> pd.DataFrame:
+    """
+    This function generates a comparative performance summary table across all models in model_classes using
+    the same evaluation data for each model contained in eval_data_dict. The output summary table has the
+    model class name as the index (rows) and for each it records A). model size in terms of Embed Size,
+    Hidden Size and Total (Trainable) Params B). automatic evaluation metrics for DeuEng and C). automatic
+    evaluation metrics for EngDeu.
 
+    Parameters
+    ----------
+    model_classes : List[str]
+        A list of model class names e.g. ['Fwd_RNN_3', 'LSTM_Att', 'LSTM_AttNN'].
+    eval_data_dict : Dict[str, List[str]]
+        A dictionary containing the dataset to be used for automatic model evaluation. The keys of the dict
+        should be "EngDeu" and "DeuEng" for the 2 directions of translation and the values should be a list
+        of parallel sentence tuples (src_sentence, tgt_sentence) where each sentence is recorded as a list of
+        sub-word tokens.
+
+    Returns
+    -------
+    summary_table : pd.DataFrame
+        A comparative summary across models.
+    """
+    metrics = ["Perplexity", "BLEU"] # Enumerate all the evaluation metrics used
+    cols = pd.MultiIndex.from_tuples([("Model", x) for x in ["Embed Size", "Hidden Size", "Total Params"]] +
+                                     [("DeuEng", x) for x in metrics] + [("EngDeu", x) for x in metrics])
+    summary_table = pd.DataFrame(index=model_classes, columns=cols)
+
+    for model_class in model_classes: # Try to generate data for this model if possible
+        for (src_lang, tgt_lang) in [("deu", "eng"), ("eng", "deu")]:
+            translation_name = f"{src_lang.capitalize()}{tgt_lang.capitalize()}"
+
+            model_save_dir = util.get_model_save_dir(model_class, src_lang, tgt_lang, False)
+            if os.path.exists(f"{model_save_dir}/model.bin"): # Check if there is a model saved in this dir
+                model = getattr(all_models, model_class).load(f"{model_save_dir}/model.bin")
+                summary_table.loc[model_class, ("Model", "Embed Size")] = model.embed_size
+                summary_table.loc[model_class, ("Model", "Hidden Size")] = model.hidden_size
+                col =  ("Model", "Total Params")
+                summary_table.loc[model_class, col] = util.count_trainable_parameters(model)
+                model_smry = generate_eval_summary(model, eval_data_dict[translation_name])
+                for eval_metric, metric_score in model_smry.items():
+                    summary_table.loc[model_class, (translation_name, eval_metric)] = metric_score
+            else:
+                print(f"No {translation_name} found for {model_class}")
 
     return summary_table
 
-## TODO: We would want to cache the data sets used so that we don't repeat the I/O on them
 
 if __name__ == "__main__":
-    model_list = ['Fwd_RNN_5', 'LSTM_Att', 'LSTM_AttNN']
+    model_classes = ['Fwd_RNN', 'LSTM_Att', 'LSTM_AttNN'] # All the models to evaluate
 
-    # Read in the training data and generate a model evaluation table
-    train_data_set = None
-    model_summary_train = generate_model_summary_table(model_list, train_data_set)
-    model_summary_train.to_csv("SAVE LOCATION")
-
-    # Read in the validation data and generate a model evaluation table
-    validation_data_set = None
-    model_summary_validation = generate_model_summary_table(model_list, validation_data_set)
-    model_summary_validation.to_csv("SAVE LOCATION")
-
-    # Read in the test data and generate a model evaluation table
-    test_data_set = None
-    model_summary_test = generate_model_summary_table(model_list, test_data_set)
-    model_summary_test.to_csv("SAVE LOCATION")
+    # Generate evaluation tables for each data set
+    for data_set_name in ["train_debug"]: # ["train_1", "validation", "test"]
+        print(f"Running model evaluation for {model_classes} using dataset={data_set_name}")
+        summary_table = generate_model_summary_table(model_classes, build_eval_dataset(data_set_name))
+        summary_table.to_csv(f"eval_tables/{data_set_name}_eval.csv")
+        print(f"\nSummary Table for Dataset={data_set_name}")
+        print(summary_table)
 
 
-## TODO: Create 3 table,s one for train, validation and test
-## Have the models in the rows and then in the column list: embedding size, hidden size, total params,
-## and then the model performance along various model metrics e.g. BLEU, Perplexity etc. for EngDeu and DeuEng
+#### TODO: Also do some qualitative analysis, compare the translations EngDeu and DeuEng vs the ""ground truth"
+# in 3 differenet categoreis according to sentence length
+
+### TODO: ADD QUALITATIVE ANALYSIS HERE
 
 
 
+## TODO: Look at whether I should do anything with the below or not
 
 # def decode(args: Dict[str, str]):
 #     """

@@ -239,7 +239,7 @@ def train_model(model: NMT, train_data: List[Tuple[List[str]]], dev_data: List[T
                         if num_trial == max_trial_num: # Once we've already lowered the learning rate n times
                             # don't keep doing it, at some point trigger early stopping
                             print('Early stop!', file=sys.stderr)
-                            return
+                            return None
 
                         else: # Otherwise, lower the leaning rate and try again to make progress
                             # Decay lr, and restore from previously best checkpoint
@@ -269,7 +269,7 @@ def train_model(model: NMT, train_data: List[Tuple[List[str]]], dev_data: List[T
 
             if epoch == max_epochs:
                 print('Reached maximum number of epochs!', file=sys.stderr)
-                return
+                return None
 
 
 def run_model_training(model_args: Dict = None, train_params: Dict = None):
@@ -323,7 +323,7 @@ def run_model_training(model_args: Dict = None, train_params: Dict = None):
         train_data_src = util.read_corpus(src_lang, data_set_name, is_tgt=False)
         train_data_tgt = util.read_corpus(tgt_lang, data_set_name, is_tgt=True)
         train_data = list(zip(train_data_src, train_data_tgt))
-        print(f"  Training data processed: {time.time() - start_time:.1f}s")
+        print(f"  Training data ({data_set_name}) processed: {time.time() - start_time:.1f}s")
         start_time = time.time() # Reset the timer start for next step
 
         val_data_src = util.read_corpus(src_lang, "validation", is_tgt=False)
@@ -361,7 +361,7 @@ def run_model_training(model_args: Dict = None, train_params: Dict = None):
                                         map_location=lambda storage, loc: storage, weights_only=False)
                     model.target_embeddings.weight = torch.nn.Parameter(parmas['state_dict']['weight'])
 
-                    print("Using pre-trained word embeddings of size: {model.embed_size}")
+                    print(f"Using pre-trained word embeddings of size: {model.embed_size}")
 
                 except Exception as e: # If not able to load in pre-trained word-embeddings, then report it
                     print("Could not load pre-trained word embedding weights")
@@ -380,11 +380,12 @@ if __name__ == "__main__":
 
     # Ingest input kwargs for training
     args = docopt(__doc__)
-    model_args = {}
+    model_params = {}
     for key, val in args.items():
         key = key.replace("--", "").replace("-", "_")
-        model_args[key] = val
+        model_params[key] = val
         if key in ["warm_start", "debug", "pt_embeddings"]:
-            model_args[key] = (val == "True") # Convert from str to bool
+            model_params[key] = (val == "True") # Convert from str to bool
 
-    run_model_training(model_args) # Run model training using the args passed
+    run_model_training(model_params) # Run model training using the args passed
+
