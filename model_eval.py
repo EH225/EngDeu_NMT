@@ -87,6 +87,63 @@ def compute_corpus_bleu_score(references: List[List[str]], hypotheses: List[List
     return bleu.score
 
 
+def generate_model_summary(model: NMT) -> pd.Series:
+    pass # TODO: Run the model evaluation for 1 model
+
+
+def generate_model_summary_table(model_names: List[str], data_set: List[Tuple[List[str]]]) -> pd.DataFrame:
+    save_dir = "saved_models/"
+    summary_table = pd.DataFrame()
+
+    for model_name in model_names: # Try to generate data for this model if possible
+        # Look for the DeuEng version of the model
+        model = None
+        model_smry = generate_model_summary(model, data_set)
+        summary_table.loc[model_name, :] = model_smry
+
+        # Look for the EngDeu version of the model
+        model = None
+
+
+
+        # Look for the model
+        # load the model
+        # Count the parameters
+        pass
+
+    # Loop over the saved model repo
+    # Load in each model
+    # Populate entries in the table
+
+
+    return summary_table
+
+## TODO: We would want to cache the data sets used so that we don't repeat the I/O on them
+
+if __name__ == "__main__":
+    model_list = ['Fwd_RNN_5', 'LSTM_Att', 'LSTM_AttNN']
+
+    # Read in the training data and generate a model evaluation table
+    train_data_set = None
+    model_summary_train = generate_model_summary_table(model_list, train_data_set)
+    model_summary_train.to_csv("SAVE LOCATION")
+
+    # Read in the validation data and generate a model evaluation table
+    validation_data_set = None
+    model_summary_validation = generate_model_summary_table(model_list, validation_data_set)
+    model_summary_validation.to_csv("SAVE LOCATION")
+
+    # Read in the test data and generate a model evaluation table
+    test_data_set = None
+    model_summary_test = generate_model_summary_table(model_list, test_data_set)
+    model_summary_test.to_csv("SAVE LOCATION")
+
+
+## TODO: Create 3 table,s one for train, validation and test
+## Have the models in the rows and then in the column list: embedding size, hidden size, total params,
+## and then the model performance along various model metrics e.g. BLEU, Perplexity etc. for EngDeu and DeuEng
+
+
 
 
 # def decode(args: Dict[str, str]):

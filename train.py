@@ -9,8 +9,8 @@ Usage:
 Options:
     -h --help                   Show this screen.
     --model=<str>               The name of the model to be trained
-    --embed-size=<int>          The size of the word vec embeddings [default: 512]
-    --hidden-size=<int>         The size of the hidden state [default: 512]
+    --embed-size=<int>          The size of the word vec embeddings [default: 256]
+    --hidden-size=<int>         The size of the hidden state [default: 256]
     --dropout-rate=<float>      The dropout probability to apply when training [default: 0.3]
     --num-layers=<int>          The number of layers to use in the encoder and decoder [default: 1]
     --src-lang=<str>            The source language to translate from [default: deu]
@@ -272,78 +272,119 @@ def train_model(model: NMT, train_data: List[Tuple[List[str]]], dev_data: List[T
                 return
 
 
-##############################################################################################################
-##############################################################################################################
-##############################################################################################################
+def run_model_training(model_args: Dict = None, train_params: Dict = None):
+    """
+    This function is a more general version of train_model. It handles instantiating a model and/or reading
+    in an existing one in from disk for training. It also handles constructing the data set needed for
+    training and validation and provides screen updates.
+
+    Parameters
+    ----------
+    model_args : Dict, optional
+        A dictionary of model and data set config arguments, see the module doc string for details.
+    train_params : Dict, optional
+        An optional dictionary specifying training parameters such as learning rate and batch size etc.
+
+    Returns
+    -------
+    None. Loads or instantiates a model, loads in the training and validation data set, calls train_model.
+
+    """
+    model_args = {} if model_args is None else model_args
+    train_params = {} if train_params is None else train_params
+
+    # 0). Preliminary argument processing
+    model_class = str(model_args.get("model", "LSTM_Att")) # Designate which model class to train
+    embed_size = int(model_args.get("embed_size", 256)) # Specify the word vec embedding size
+    hidden_size = int(model_args.get("hidden_size", 256)) # Specify the hidden state
+    num_layers =  int(model_args.get("num_layers", 1)) # Specify how many layers the model has
+    dropout =  float(model_args.get("dropout_rate", 0.3)) # Specify the dropout rate for training
+    src_lang = str(model_args.get("src_lang", "deu")) # Specify the source language (from)
+    tgt_lang = str(model_args.get("tgt_lang", "eng")) # Specify the target language (to)
+    assert src_lang != tgt_lang, "soruce language must differ from target language"
+    assert src_lang in ["eng", "deu"], "src_lang must be either eng or deu"
+    assert tgt_lang in ["eng", "deu"], "tgt_lang must be either eng or deu"
+    warm_start = model_args.get("warm_start", True) # Whether to try continuing with a prior model
+    assert isinstance(warm_start, bool), "warm_start must be a bool if provided"
+    train_sets = model_args.get("train_sets", [1]) # Specify which training set to use {1, 2, 3}
+    train_sets = [train_sets] if isinstance(train_sets, int) else train_sets
+    assert isinstance(train_sets, list), "train_sets must be a list of training sets to use or an int"
+    use_pretreind_embeddings = model_args.get("pt_embeddings", True)
+    assert isinstance(use_pretreind_embeddings, bool), "pt_embeddings must be a bool if provided"
+    debug = args.get("debug", False) # Specify if the training is to be run in debug mode
+    assert isinstance(debug, bool), "debug must be a bool if provided"
+
+    for train_set in train_sets: # Loop over all the training sets specified and train
+        # 1). Read in the data sets required to train the model
+        print(f"Starting training process for {src_lang} to {tgt_lang}. Data set pre-processing...")
+        start_time = time.time()
+        # Build the data set for training and validation
+        data_set_name = f"train_{train_set}" if debug is False else "train_debug"
+        train_data_src = util.read_corpus(src_lang, data_set_name, is_tgt=False)
+        train_data_tgt = util.read_corpus(tgt_lang, data_set_name, is_tgt=True)
+        train_data = list(zip(train_data_src, train_data_tgt))
+        print(f"  Training data processed: {time.time() - start_time:.1f}s")
+        start_time = time.time() # Reset the timer start for next step
+
+        val_data_src = util.read_corpus(src_lang, "validation", is_tgt=False)
+        val_data_tgt = util.read_corpus(tgt_lang, "validation", is_tgt=True)
+        dev_data = list(zip(val_data_src, val_data_tgt))
+        print(f"  Validation data processed: {time.time() - start_time:.1f}s")
+
+        # 2). Load in the pre-trained vocab model
+        vocab = Vocab.load(f"vocab/{src_lang}_to_{tgt_lang}_vocab")
+
+        # 3). Decide whether to use the debug training parameters or not
+        train_params = train_params if debug is False else DEBUG_TRAIN_PARAMS.copy()
+
+        # 4) Determine where to save the model during training
+        model_save_dir = util.get_model_save_dir(model_class, src_lang, tgt_lang, debug)
+        Path(model_save_dir).mkdir(parents=True, exist_ok=True) # Make the save dir if not already there
+
+        # 5). Either load in an existing model from disk or instantiate a new one to train from scratch
+        if warm_start and "model.bin" in os.listdir(model_save_dir):
+            # Load an existing model and continue training from where we left off if one exists
+            model = getattr(all_models, model_class).load(f"{model_save_dir}/model.bin")
+            train_params["warm_start"] = True # Use the prior optimizer saved from prev training
+        else: # Otherwise, initialize a new model instance to be trained
+            model_kwargs = {"embed_size": embed_size, "hidden_size": hidden_size, "num_layers": num_layers,
+                            "dropout_rate": dropout, "vocab": vocab}
+            model = getattr(all_models, model_class)(**model_kwargs) # Instantiate a new model
+            print(f"Instantiating model={model.name} with kwargs:\n", model_kwargs)
+            if use_pretreind_embeddings is True: # If creating a new model, we may use pretrained word embeds
+                try: # Attempt to load the pre-trained embedding weights if possible
+                    parmas = torch.load(f"saved_models/embeddings/{src_lang}_{embed_size}",
+                                        map_location=lambda storage, loc: storage, weights_only=False)
+                    model.source_embeddings.weight = torch.nn.Parameter(parmas['state_dict']['weight'])
+
+                    parmas = torch.load(f"saved_models/embeddings/{tgt_lang}_{embed_size}",
+                                        map_location=lambda storage, loc: storage, weights_only=False)
+                    model.target_embeddings.weight = torch.nn.Parameter(parmas['state_dict']['weight'])
+
+                    print("Using pre-trained word embeddings of size: {model.embed_size}")
+
+                except Exception as e: # If not able to load in pre-trained word-embeddings, then report it
+                    print("Could not load pre-trained word embedding weights")
+                    print(e)
+
+        # Run a full training iteration for this model
+        print("train_params:\n", train_params)  # Report the training parameters that will be used in training
+        train_model(model=model, train_data=train_data, dev_data=dev_data, model_save_dir=model_save_dir,
+                    params=train_params)
+
 
 if __name__ == "__main__":
     msg = ("Please update your installation of PyTorch. You have {torch.__version__}, but you should have "
            "version 1.0.0")
     assert(torch.__version__ >= "1.0.0"), msg
 
-    ### Ingest input kwargs for training
+    # Ingest input kwargs for training
     args = docopt(__doc__)
-    model_class = str(args.get("--model", "LSTM_Att")) # Designate which model class to train
-    embed_size = int(args.get("--embed-size", 512)) # Specify the word vec embedding size
-    hidden_size = int(args.get("--hidden-size", 512)) # Specify the hidden state
-    num_layers =  int(args.get("--num-layers", 1)) # Specify how many layers the model has
-    dropout =  float(args.get("--dropout-rate", 0.3)) # Specify the dropout rate for training
-    src_lang = args.get("--src-lang", "deu") # Specify the source language (from)
-    tgt_lang = args.get("--tgt-lang", "eng") # Specify the target language (to)
-    warm_start = args.get("--warm-start", "True") == "True" # Whether to try continuing with a prior model
-    train_set = int(args.get("--train-set", 1)) # Specify which training set to use {1, 2, 3}
-    use_pretreind_embeddings = args.get("--pt-embeddings", "True") == "True"
-    assert src_lang != tgt_lang, "soruce language must differ from target language"
-    debug = args.get("--debug", "False") == "True" # Specify if the training is to be run in debug mode
+    model_args = {}
+    for key, val in args.items():
+        key = key.replace("--", "").replace("-", "_")
+        model_args[key] = val
+        if key in ["warm_start", "debug", "pt_embeddings"]:
+            model_args[key] = (val == "True") # Convert from str to bool
 
-    ### Read in the data sets required to train the model
-    print(f"Starting training process for {src_lang} to {tgt_lang}. Data set pre-processing...")
-    start_time = time.time()
-    # Build the data set for training and validation
-    data_set_name = f"train_{train_set}" if debug is False else "train_debug"
-    train_data_src = util.read_corpus(src_lang, data_set_name, is_tgt=False)
-    train_data_tgt = util.read_corpus(tgt_lang, data_set_name, is_tgt=True)
-    train_data = list(zip(train_data_src, train_data_tgt))
-    print(f"  Training data processed: {time.time() - start_time:.1f}s")
-    start_time = time.time() # Reset the timer start for next step
-
-    val_data_src = util.read_corpus(src_lang, "validation", is_tgt=False)
-    val_data_tgt = util.read_corpus(tgt_lang, "validation", is_tgt=True)
-    dev_data = list(zip(val_data_src, val_data_tgt))
-    print(f"  Validation data processed: {time.time() - start_time:.1f}s")
-
-    ### Load in the pre-trained vocav model
-    vocab = Vocab.load(f"vocab/{src_lang}_to_{tgt_lang}_vocab")
-
-    train_params = {} if debug is False else DEBUG_TRAIN_PARAMS.copy()
-
-    ### Determine where to save the model during training
-    model_save_dir = util.get_model_save_dir(model_class, src_lang, tgt_lang, debug)
-    Path(model_save_dir).mkdir(parents=True, exist_ok=True) # Make the save dir if not already there
-
-    if warm_start and "model.bin" in os.listdir(model_save_dir):
-        # Load an existing model and continue training from where we left off
-        model = getattr(all_models, model_class).load(f"{model_save_dir}/model.bin")
-        train_params["warm_start"] = True # Use the prior optimizer saved from training
-    else: # Initialize a new model instance to be trained
-        model_kwargs = {"embed_size": embed_size, "hidden_size": hidden_size, "num_layers": num_layers,
-                        "dropout_rate": dropout, "vocab": vocab}
-        model = getattr(all_models, model_class)(**model_kwargs)
-        print(f"Instantiating model={model.name} with kwargs:\n", model_kwargs)
-        if use_pretreind_embeddings is True:
-            try: # Attempt to load the pre-trained embedding weights if possible
-                parmas = torch.load(f"saved_models/embeddings/{src_lang}_{embed_size}",
-                                    map_location=lambda storage, loc: storage, weights_only=False)
-                model.source_embeddings.weight = torch.nn.Parameter(parmas['state_dict']['weight'])
-
-                parmas = torch.load(f"saved_models/embeddings/{tgt_lang}_{embed_size}",
-                                    map_location=lambda storage, loc: storage, weights_only=False)
-                model.target_embeddings.weight = torch.nn.Parameter(parmas['state_dict']['weight'])
-                print("Using pre-trained word embeddings of size: {model.embed_size}")
-            except Exception as e:
-                print("Could not load pre-trained word embedding weights")
-                print(e)
-
-    # Run a training iter for the model
-    print("train_params:\n", train_params)
-    train_model(model, train_data, dev_data, model_save_dir, params=train_params)
+    run_model_training(model_args) # Run model training using the args passed
