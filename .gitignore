@@ -1,2 +1,7 @@
 *__pycache*
 *.docx
+*TEST.py
+.ipynb_checkpoints/
+literature/
+saved_models/
+dataset/
