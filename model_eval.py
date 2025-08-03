@@ -508,6 +508,7 @@ if __name__ == "__main__":
     nltk.download('wordnet')  # Used for synonym matching
     nltk.download('omw-1.4')  # For multilingual WordNet, including German and English
     nltk.download('punkt')    # For tokenization in various languages
+    nltk.download('punkt_tab')
 
     parser = argparse.ArgumentParser(description='Run model evaluation pipeline')
     parser.add_argument('data_set_name', type=str, help='The name of the data set to evaluate on.')
