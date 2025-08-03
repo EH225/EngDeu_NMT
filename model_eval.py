@@ -6,7 +6,7 @@ BLEU scores etc. and also model summary comparison tables.
 
 import models.all_models as all_models
 import sentencepiece as spm
-from typing import List, Tuple, Dict
+from typing import List, Tuple, Dict, Union, Optional
 import pandas as pd
 import numpy as np
 import sacrebleu
@@ -18,6 +18,7 @@ import matplotlib.pyplot as plt
 from models.util import Hypothesis, NMT
 import torch, os
 import util
+from tqdm import tqdm
 from termcolor import colored as c
 
 #####################################################
@@ -56,7 +57,7 @@ def compute_perplexity(model: NMT, eval_data: List[Tuple[List[str]]], batch_size
     cuml_tgt_words = 0.0 # Track how many total target language output words were in the eval_data
 
     with torch.no_grad():  # no_grad() signals backend to throw away all gradients
-        for src_sentences, tgt_sentences in util.batch_iter(eval_data, batch_size):
+        for src_sentences, tgt_sentences in util.batch_iter(eval_data, batch_size, shuffle=False):
             loss = -model(src_sentences, tgt_sentences).sum() # Compute the forward function i.e. the
             # negative log-likelihood of the output target words according to the model
             cuml_loss += loss.item() # Accumulate the loss
@@ -225,9 +226,7 @@ def compute_corpus_meteor_score(mt_df: pd.DataFrame, tgt_lang: str = "deu") -> f
 # GTM = General Text Matcher is also not available through nltk so we will skip it
 
 
-### TODO: Continue with embedding based metrics e.g. MEANT etc.
-
-
+### TODO: Continue with embedding based metrics e.g. BERTscore
 
 # TODO: Add more automatic evaluation metrics here as well, make sure they all follow the same input conventions
 # For each one, discuss 1). the calculation methodology 2). the strengths and weakensses 3). the range of
@@ -238,6 +237,38 @@ def compute_corpus_meteor_score(mt_df: pd.DataFrame, tgt_lang: str = "deu") -> f
 ######################################################
 ### Model Performance Summary Generation Functions ###
 ######################################################
+
+def load_model(model_class: str, src_lang: str, tgt_lang: str) -> Optional[NMT]:
+    """
+    Helper util function that loads a model from a given model_class for a specified translation language
+    pairing i.e. (src_lang, tgt_lang).
+
+    Parameters
+    ----------
+    model_class : str
+        The name of the model class to load from e.g. "Fwd_RNN", "LSTM_Att", "Google_API" etc.
+    src_lang : str
+        The language of the source sentences (e.g. "eng" or "deu").
+    tgt_lang : str
+        The language of the target sentences (e.g. "eng" or "deu").
+
+    Returns
+    -------
+    model : Optional[NMT]
+        Loads and returns the model instance saved to disk or None if it cannot be located.
+    """
+    assert src_lang != tgt_lang, f"Source and target language must be different, got {src_lang}, {tgt_lang}"
+    translation_name = f"{src_lang.capitalize()}{tgt_lang.capitalize()}"
+    model_save_dir = util.get_model_save_dir(model_class, src_lang, tgt_lang, False)
+    if os.path.exists(f"{model_save_dir}/model.bin"): # Check if there is a model saved in this dir
+        model = getattr(all_models, model_class).load(f"{model_save_dir}/model.bin")  # Load the model
+    elif model_class == "Google_API":
+        model = getattr(all_models, model_class)(src_lang, tgt_lang)
+    else:
+        print(f"No {translation_name} found for {model}")
+        model = None
+    return model
+
 
 def build_eval_dataset(data_set_name: str) -> Dict[str, List[Tuple[List[str]]]]:
     """
@@ -262,32 +293,32 @@ def build_eval_dataset(data_set_name: str) -> Dict[str, List[Tuple[List[str]]]]:
     eval_data_dict = {}
 
     # EngDeu evaluation data set
-    src_data = util.read_corpus("eng", data_set_name, is_tgt=False)[:25] # TODO: TEMP
-    tgt_data = util.read_corpus("deu", data_set_name, is_tgt=True)[:25] # TODO: TEMP
+    src_data = util.read_corpus("eng", data_set_name, is_tgt=False)
+    tgt_data = util.read_corpus("deu", data_set_name, is_tgt=True)
     eval_data_dict["EngDeu"] = list(zip(src_data, tgt_data))
 
     # DeuEng evaluation data set
-    src_data = util.read_corpus("deu", data_set_name, is_tgt=False)[:25] # TODO: TEMP
-    tgt_data = util.read_corpus("eng", data_set_name, is_tgt=True)[:25] # TODO: TEMP
+    src_data = util.read_corpus("deu", data_set_name, is_tgt=False)
+    tgt_data = util.read_corpus("eng", data_set_name, is_tgt=True)
     eval_data_dict["DeuEng"] = list(zip(src_data, tgt_data))
 
     return eval_data_dict
 
 
-def generate_mt_df(model_class: str, eval_data: List[Tuple[List[str]]], src_lang: str,
-                   tgt_lang: str) -> pd.DataFrame:
+def generate_mt_df(model: NMT, eval_data: List[Tuple[List[str]]]) -> pd.DataFrame:
     """
-    Generates a machine translation dataframe for a given model_class and specified (src, tgt) language pair.
-    The model is loaded (if it exists) and each input source sentence is passed through it to generate an
-    output machine translation (mt).
+    Generates a machine translation dataframe for a given model, passes each input source sentence through
+    the model's greedy_search method to generate output machine translations (mt).
 
-    The output dataframe records 1). the source sentence 2). the translation provided 3). the model's output
-    machine translation.
+    The output dataframe records:
+        1). the source sentence
+        2). the translation provided
+        3). the model's output machine translation
 
     Parameters
     ----------
-    model_class : str
-        A model class name e.g. ['Fwd_RNN_3', 'LSTM_Att', 'LSTM_AttNN'].
+    model : NMT
+        A model object to use for generating translations.
     eval_data : List[Tuple[List[str]]]
         A list of (src_sentence, tgt_sentence) tuples containing source and target sentences stored as lists
         of word-tokens.
@@ -300,32 +331,19 @@ def generate_mt_df(model_class: str, eval_data: List[Tuple[List[str]]], src_lang
     -------
     pd.DataFrame
         Returns a DataFrame with columns ["src", "tgt", "mt"] for each input sentence pair.
-
     """
-    assert src_lang != tgt_lang, f"Source and target language must be different, got {src_lang}, {tgt_lang}"
-    translation_name = f"{src_lang.capitalize()}{tgt_lang.capitalize()}"
-    model_save_dir = util.get_model_save_dir(model_class, src_lang, tgt_lang, False)
     # Record the outputs for each translation i.e. the source sentence (src), the target sentence (tgt) i.e.
     # the translation provided in the data set and the model translation (machine translation = mt)
-    output_df = pd.DataFrame(index=np.arange(len(eval_data)), columns=["src", "tgt", "mt"])
     chunks = [] # Create DataFrame chuncks that will be concatenated at the end
-
-    if os.path.exists(f"{model_save_dir}/model.bin"): # Check if there is a model saved in this dir
-        model = getattr(all_models, model_class).load(f"{model_save_dir}/model.bin")  # Load the model
-        for src_sents, tgt_sents in util.batch_iter(eval_data, batch_size=32, shuffle=False):
-            chunk = pd.DataFrame(columns=["src", "tgt", "mt"])
-            chunk["src"] = [util.tokens_to_str(s) for s in src_sents] # Record the input source sentences
-            chunk["tgt"] = [util.tokens_to_str(s) for s in tgt_sents] # Record the output target sentences
-            # Run the input source sentences through the model and generate machine translations
-            mt = model.greedy_search(src_sents)
-            chunk["mt"] = [util.tokens_to_str(x[0]) for x in mt] # Record the decoded sentences
-            chunks.append(chunk) # Add to the list of dataframe chuncks, one for each batch
-        return pd.concat(chunks)  # Concatenate all the df chunks together and return
-
-    else:
-        print(f"No {translation_name} found for {model_class}")
-
-    return output_df
+    for src_sents, tgt_sents in util.batch_iter(eval_data, batch_size=32, shuffle=False):
+        chunk = pd.DataFrame(columns=["src", "tgt", "mt"])
+        chunk["src"] = [util.tokens_to_str(s) for s in src_sents] # Record the input source sentences
+        chunk["tgt"] = [util.tokens_to_str(s) for s in tgt_sents] # Record the output target sentences
+        # Run the input source sentences through the model and generate machine translations
+        mt = model.greedy_search(src_sents)
+        chunk["mt"] = [util.tokens_to_str(x[0]) for x in mt] # Record the decoded sentences
+        chunks.append(chunk) # Add to the list of dataframe chuncks, one for each batch
+    return pd.concat(chunks)  # Concatenate all the df chunks together and return
 
 
 def print_qualitative_comparison(mt_df: pd.DataFrame) -> None:
@@ -370,10 +388,13 @@ def generate_eval_summary(model: NMT, eval_data: List[Tuple[List[str]]]) -> pd.S
         A pd.Series of evaluation metric values.
     """
     # Compute mt_df for this model and use it throughout for various eval metric calculations
-    mt_df = generate_mt_df(model.name, eval_data, model.vocab.src_lang, model.vocab.tgt_lang)
+    mt_df = generate_mt_df(model, eval_data)
 
     eval_summary = pd.Series(dtype=float)  # Record in a pd.Series
-    eval_summary.loc["Perplexity"] = compute_perplexity(model, eval_data)
+    if model.name == "Google_API":
+        eval_summary.loc["Perplexity"] = 0
+    else:
+        eval_summary.loc["Perplexity"] = compute_perplexity(model, eval_data)
     eval_summary.loc["BLEU"] = compute_corpus_bleu_score(mt_df, model.vocab.tgt_lang)
     eval_summary.loc["NIST"] = compute_corpus_nist_score(mt_df, model.vocab.tgt_lang)
     eval_summary.loc["METEOR"] = compute_corpus_meteor_score(mt_df, model.vocab.tgt_lang)
@@ -410,7 +431,7 @@ def generate_model_summary_table(model_classes: List[str],
                                      [("DeuEng", x) for x in metrics] + [("EngDeu", x) for x in metrics])
     summary_table = pd.DataFrame(index=model_classes, columns=cols)
 
-    for model_class in model_classes: # Try to generate data for this model if possible
+    for model_class in tqdm(model_classes, ncols=75): # Try to generate data for this model if possible
         for (src_lang, tgt_lang) in [("deu", "eng"), ("eng", "deu")]:
             translation_name = f"{src_lang.capitalize()}{tgt_lang.capitalize()}"
             model_save_dir = util.get_model_save_dir(model_class, src_lang, tgt_lang, False)
@@ -425,8 +446,20 @@ def generate_model_summary_table(model_classes: List[str],
                 for eval_metric, metric_score in model_smry.items(): # Add each computed metric score to the
                     # summary df using the multi-index
                     summary_table.loc[model_class, (translation_name, eval_metric)] = metric_score
+
+            elif model_class == "Google_API": # Handle this case separately, evaluate the Google Translate API
+                # outputs and add them to the summary table using the same eval metrics
+                summary_table.loc[model_class, ("Model", "Embed Size")] = np.nan
+                summary_table.loc[model_class, ("Model", "Hidden Size")] = np.nan
+                summary_table.loc[model_class, ("Model", "Total Params")] = np.nan
+                model = all_models.Google_API(src_lang, tgt_lang) # Load in the model
+                model_smry = generate_eval_summary(model, eval_data_dict[translation_name])
+                for eval_metric, metric_score in model_smry.items(): # Add each computed metric score to the
+                    # summary df using the multi-index
+                    summary_table.loc[model_class, (translation_name, eval_metric)] = metric_score
+
             else:  # If this model cannot be located, print a notification and move to the next one
-                print(f"No {translation_name} found for {model_class}")
+                print(f"No {translation_name} model found for {model_class}")
 
     return summary_table
 
@@ -453,12 +486,11 @@ if run_qual_analysis:
     qual_eval_data_DeuEng = list(zip(deu_sentences_tokenized, eng_sentences_tokenized))
     qual_eval_data_EngDeu = list(zip(eng_sentences_tokenized, deu_sentences_tokenized))
 
-    mt_df = generate_mt_df("LSTM_Att", qual_eval_data_DeuEng, "deu", "eng")
+    mt_df = generate_mt_df(load_model("LSTM_Att", "deu", "eng"), qual_eval_data_DeuEng)
     print_qualitative_comparison(mt_df)
 
-    mt_df = generate_mt_df("LSTM_Att", qual_eval_data_EngDeu, "eng", "deu")
+    mt_df = generate_mt_df(load_model("LSTM_Att", "eng", "deu"), qual_eval_data_EngDeu)
     print_qualitative_comparison(mt_df)
-
 
 
 ## TODO: Get together some easy, medium, and hard sentences based on sentence length
@@ -474,10 +506,10 @@ if __name__ == "__main__":
     start_time = time.time()
 
     # model_classes = ['Fwd_RNN', 'LSTM_Att', 'LSTM_AttNN'] # All the models to evaluate
-    model_classes = ['Fwd_RNN', 'LSTM_Att'] # All the models to evaluate
+    model_classes = ['Fwd_RNN', 'LSTM_Att', 'Google_API'] # All the models to evaluate
 
     # Generate evaluation tables for each data set (train, validation, test)
-    for data_set_name in ["train_debug"]: # ["train_1", "validation", "test"]
+    for data_set_name in ["train_debug"]: # ["train_debug", "validation", "test"]
         print(f"Running model evaluation for {model_classes} using dataset={data_set_name}")
         summary_table = generate_model_summary_table(model_classes, build_eval_dataset(data_set_name))
         summary_table.to_csv(f"eval_tables/{data_set_name}_eval.csv")  # Save the computed results
@@ -485,11 +517,6 @@ if __name__ == "__main__":
         print(summary_table)
 
     print(f"Runtime: {time.time() - start_time:.2f}") # Report how long it took to run in total
-
-
-## TODO: We don't want to duplicate I/O or machine translation output time so we should make sure to re-use
-## results as much as possiable internally
-
 
 
 

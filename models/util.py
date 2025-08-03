@@ -65,6 +65,3 @@ class NMT(nn.Module, ABC):
 
 # TODO: move common stuff here that we don't need to define in each model
 # Define what methods need to be implemented by all models so that the evaluation tools are consistent etc.
-
-
-
