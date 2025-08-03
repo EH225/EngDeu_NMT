@@ -9,7 +9,6 @@ import sentencepiece as spm
 from typing import List, Tuple, Dict, Union, Optional
 import pandas as pd
 import numpy as np
-import sacrebleu
 import nltk.translate
 from nltk.corpus import wordnet
 from nltk.stem.snowball import SnowballStemmer
@@ -503,19 +502,22 @@ if run_qual_analysis:
 
 if __name__ == "__main__":
     import time
-    start_time = time.time()
+    import argparse
 
-    # model_classes = ['Fwd_RNN', 'LSTM_Att', 'LSTM_AttNN'] # All the models to evaluate
+    parser = argparse.ArgumentParser(description='Run model evaluation pipeline')
+    parser.add_argument('data_set_name', type=str, help='The name of the data set to evaluate on.')
+    args = parser.parse_args()
+    data_set_name = args.data_set_name
+
     model_classes = ['Fwd_RNN', 'LSTM_Att', 'Google_API'] # All the models to evaluate
 
-    # Generate evaluation tables for each data set (train, validation, test)
-    for data_set_name in ["train_debug"]: # ["train_debug", "validation", "test"]
-        print(f"Running model evaluation for {model_classes} using dataset={data_set_name}")
-        summary_table = generate_model_summary_table(model_classes, build_eval_dataset(data_set_name))
-        summary_table.to_csv(f"eval_tables/{data_set_name}_eval.csv")  # Save the computed results
-        print(f"\nSummary Table for Dataset={data_set_name}")
-        print(summary_table)
-
+    # Generate evaluation tables for the data set i.e. one of ["train_debug", "validation", "test"]
+    print(f"Running model evaluation for {model_classes} using dataset={data_set_name}")
+    start_time = time.time()
+    summary_table = generate_model_summary_table(model_classes, build_eval_dataset(data_set_name))
+    summary_table.to_csv(f"eval_tables/{data_set_name}_eval.csv")  # Save the computed results
+    print(f"\nSummary Table for Dataset={data_set_name}")
+    print(summary_table)
     print(f"Runtime: {time.time() - start_time:.2f}") # Report how long it took to run in total
 
 
