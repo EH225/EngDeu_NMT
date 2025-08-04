@@ -13,6 +13,7 @@ import nltk.translate
 from nltk.corpus import wordnet
 from nltk.stem.snowball import SnowballStemmer
 from nltk.tokenize import word_tokenize
+from bert_score import BERTScorer
 import matplotlib.pyplot as plt
 from models.util import Hypothesis, NMT
 import torch, os
@@ -225,7 +226,41 @@ def compute_corpus_meteor_score(mt_df: pd.DataFrame, tgt_lang: str = "deu") -> f
 # GTM = General Text Matcher is also not available through nltk so we will skip it
 
 
-### TODO: Continue with embedding based metrics e.g. BERTscore
+def compute_corpus_bert_score(mt_df: pd.DataFrame, tgt_lang: str = "deu") -> float:
+    """
+    Computes a corpus level BERT score (Bidirectional Encoder Representations from Transformers) for the input
+    machine translation dataframe (mt_df) provided. See: https://github.com/Tiiiger/bert_score for details.
+
+    This embedding model-based evaluation metric of translation quality is an improvement on some of the
+    lexical-based methods by using a large-language model transformer (BERT) to generate deep contextual
+    representations of the input sentences provided. BERT is better able to handle synonym similarity, word
+    order choice, context, and paraphrasing than other simplier models. Its main limitation is that it takes
+    longer to compute given the use of an LLM to generate latent representations of each input word. BERT
+    scores generally correlate well with human evaluation scoring.
+
+    BERT score is computed by passing the reference and hypothesis into the BERT model, generating deep latent
+    representations of each input word from both texts separately, and then computes the cosine similarities
+    between contextual embeddings of the 2 sources with a greedy-matching approach to maximize similarities.
+
+    BERT scores combine recision and recall using F1-score and return a value between [0, 1] with 1 being
+    the highest score. A score of 0.7-0.8 is generally considered good, 0.8-0.9 is considered very good, and
+    above 0.9 is considered excellent.
+
+    Returns
+    -------
+    float
+        A corpus-level BERT score ranging from 0 to 1.
+    """
+    assert tgt_lang in ["eng", "deu"], "tgt_lang must be either 'eng' or 'deu'"
+    lang = "en" if tgt_lang == "eng" else "de"
+    bert_model = BERTScorer(model_type='bert-base-uncased', lang=lang, rescale_with_baseline=True)
+    P, R, F1 = bert_model.score([mt_df["mt"]], [mt_df["tgt"]])
+    return F1
+
+
+# ROUGE, BLEURT as well, COMET
+# Use PyRouge: https://medium.com/nlplanet/two-minutes-nlp-learn-the-rouge-metric-by-examples-f179cc285499
+
 
 # TODO: Add more automatic evaluation metrics here as well, make sure they all follow the same input conventions
 # For each one, discuss 1). the calculation methodology 2). the strengths and weakensses 3). the range of
@@ -397,6 +432,7 @@ def generate_eval_summary(model: NMT, eval_data: List[Tuple[List[str]]]) -> pd.S
     eval_summary.loc["BLEU"] = compute_corpus_bleu_score(mt_df, model.vocab.tgt_lang)
     eval_summary.loc["NIST"] = compute_corpus_nist_score(mt_df, model.vocab.tgt_lang)
     eval_summary.loc["METEOR"] = compute_corpus_meteor_score(mt_df, model.vocab.tgt_lang)
+    eval_summary.loc["BERT"] = compute_corpus_bert_score(mt_df, model.vocab.tgt_lang)
     # TODO: Add other evaluation metrics here
     return eval_summary
 
@@ -455,7 +491,10 @@ def generate_model_summary_table(model_classes: List[str],
                 model_smry = generate_eval_summary(model, eval_data_dict[translation_name])
                 for eval_metric, metric_score in model_smry.items(): # Add each computed metric score to the
                     # summary df using the multi-index
-                    summary_table.loc[model_class, (translation_name, eval_metric)] = metric_score
+                    if eval_metric == "Perplexity": # NaN out the perplexity values from the Google API eval
+                        summary_table.loc[model_class, (translation_name, eval_metric)] = np.nan
+                    else: # If not perplexity, record the eval metric score as-is
+                        summary_table.loc[model_class, (translation_name, eval_metric)] = metric_score
 
             else:  # If this model cannot be located, print a notification and move to the next one
                 print(f"No {translation_name} model found for {model_class}")
