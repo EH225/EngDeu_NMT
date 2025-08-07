@@ -253,9 +253,9 @@ def compute_corpus_bert_score(mt_df: pd.DataFrame, tgt_lang: str = "deu") -> flo
     """
     assert tgt_lang in ["eng", "deu"], "tgt_lang must be either 'eng' or 'deu'"
     lang = "en" if tgt_lang == "eng" else "de"
-    bert_model = BERTScorer(model_type='bert-base-uncased', lang=lang, rescale_with_baseline=True)
-    P, R, F1 = bert_model.score([mt_df["mt"]], [mt_df["tgt"]])
-    return F1
+    bert_model = BERTScorer(model_type='bert-base-multilingual-cased', lang=lang, rescale_with_baseline=True)
+    P, R, F1 = bert_model.score(mt_df["mt"].tolist(), mt_df["tgt"].tolist())
+    return F1.mean().item() # Average across all sentences and return a float
 
 
 # ROUGE, BLEURT as well, COMET
@@ -299,7 +299,7 @@ def load_model(model_class: str, src_lang: str, tgt_lang: str) -> Optional[NMT]:
     elif model_class == "Google_API":
         model = getattr(all_models, model_class)(src_lang, tgt_lang)
     else:
-        print(f"No {translation_name} found for {model}")
+        print(f"No {model_class} {translation_name} saved model on disk")
         model = None
     return model
 
@@ -404,7 +404,9 @@ def generate_eval_summary(model: NMT, eval_data: List[Tuple[List[str]]]) -> pd.S
     evaluation data set (eval_data). Evaluation metrics include:
         - Perplexity
         - Bi-Lingual Evaluation Understudy (BLEU)
+        - National Institute of Standards and Technology (NIST)
         - Metric for Evaluation of Translation with Explicit ORdering (METEOR)
+        - Bidirectional Encoder Representations from Transformers Score (BERT)
         ...
         - TODO: ADD MORE HERE
 
@@ -461,7 +463,8 @@ def generate_model_summary_table(model_classes: List[str],
     summary_table : pd.DataFrame
         A comparative performance summary across models.
     """
-    metrics = ["Perplexity", "BLEU", "NIST", "METEOR"] # Enumerate all the evaluation metrics used
+    # Enumerate all the evaluation metrics used
+    metrics = ["Perplexity", "BLEU", "NIST", "METEOR", "BERT"]
     cols = pd.MultiIndex.from_tuples([("Model", x) for x in ["Embed Size", "Hidden Size", "Total Params"]] +
                                      [("DeuEng", x) for x in metrics] + [("EngDeu", x) for x in metrics])
     summary_table = pd.DataFrame(index=model_classes, columns=cols)
