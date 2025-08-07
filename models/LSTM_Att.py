@@ -30,6 +30,9 @@ class LSTM_Att(NMT):
             The size of the word vector embeddings (dimensionality).
         hidden_size : int
             The size of the hidden states (dimensionality) used by the encoder and decoder LSTM.
+        dropout_rate : float
+            The dropout rate used in the attention mechanism, specifies the probability of a node being
+            switched off during training, something around 0.2 is typical.
         vocab : Vocab
             A Vocabulary object containing source (src) and target (tgt) language vocabularies.
         """
@@ -42,6 +45,10 @@ class LSTM_Att(NMT):
         self.name = "LSTM_Att"
         # self.lang_pair = (vocab.src_lang, vocab.tgt_lang) # Record the language pair of the translation
 
+
+        ######################################################################################################
+        ### Define the model architecture
+
         # Create a word-embedding mapping for the source language vocab
         self.source_embeddings = nn.Embedding(num_embeddings=len(vocab.src), embedding_dim=embed_size,
                                               padding_idx=vocab.src['<pad>'])
@@ -50,8 +57,6 @@ class LSTM_Att(NMT):
         self.target_embeddings = nn.Embedding(num_embeddings=len(vocab.tgt), embedding_dim=embed_size,
                                               padding_idx=vocab.tgt['<pad>'])
 
-        ######################################################################################################
-        ### Define the model architecture
 
         # This is the bi-directional LSTM encoder that takes in the word embedding for each input word of the
         # source language (each of size embed_size) and outputs a hidden state vector of size hidden_size and
@@ -139,9 +144,11 @@ class LSTM_Att(NMT):
         Parameters
         ----------
         source : List[List[str]]
-            A list of source sentence tokens.
+            A list of input source language sentences i.e. a list of sentences where each sentence is a list
+            of sub-word tokens.
         target : List[List[str]]
-            A list of target sentence toakens wrapped by <s> and </s>.
+            A list of target source language sentences i.e. a list of sentences where each sentence is a list
+            of sub-word tokens wrapped by <s> and </s>.
 
         Returns
         -------

@@ -14,6 +14,12 @@ from torch.nn.utils.rnn import pad_packed_sequence, pack_padded_sequence
 Hypothesis = namedtuple('Hypothesis', ['value', 'score'])
 
 
+### TOODO: Make sure this abstract class has all the things that we need for training and eval etc.
+# e.g. should have self.source_embeddings and self.target_embeddings, greedy_search etc. but not others
+# that are not strictly required e.g. encode and decode, or maybe we do. Ideally the Google API model would
+# Fit this mold. Think about what things are assumed to be common and called during training and eval that
+# all models absolutely must have
+
 class NMT(nn.Module, ABC):
     @abstractmethod
     def forward(self, *args, **kwargs):
@@ -29,7 +35,7 @@ class NMT(nn.Module, ABC):
         pass
 
     @abstractmethod
-    def beam_search(self, *args, **kwargs):
+    def greedy_search(self, *args, **kwargs):
         pass
 
     @property

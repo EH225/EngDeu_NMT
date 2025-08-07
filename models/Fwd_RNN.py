@@ -45,6 +45,10 @@ class Fwd_RNN(NMT):
         self.vocab = vocab # Use self.vocab.src_lang and self.vocab.tgt_lang to access the language labels
         self.name = "Fwd_RNN"
 
+
+        ######################################################################################################
+        ### Define the model architecture
+
         # Create a word-embedding mapping for the source language vocab
         self.source_embeddings = nn.Embedding(num_embeddings=len(vocab.src), embedding_dim=embed_size,
                                               padding_idx=vocab.src['<pad>'])
@@ -52,9 +56,6 @@ class Fwd_RNN(NMT):
         # Create a word-embedding mapping for the target language vocab
         self.target_embeddings = nn.Embedding(num_embeddings=len(vocab.tgt), embedding_dim=embed_size,
                                               padding_idx=vocab.tgt['<pad>'])
-
-        ######################################################################################################
-        ### Define the model architecture
 
         # Takes in the word embedding for each input word of the source language (each of size embed_size)
         # and outputs a hidden state vector of size hidden_size, this layer is encoder
@@ -101,9 +102,11 @@ class Fwd_RNN(NMT):
         Parameters
         ----------
         source : List[List[str]]
-            A list of source sentence tokens.
+            A list of input source language sentences i.e. a list of sentences where each sentence is a list
+            of sub-word tokens.
         target : List[List[str]]
-            A list of target sentence toakens wrapped by <s> and </s>.
+            A list of target source language sentences i.e. a list of sentences where each sentence is a list
+            of sub-word tokens wrapped by <s> and </s>.
 
         Returns
         -------
