@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-
-from collections import namedtuple
+from __future__ import annotations
 import sys, os
 import numpy as np
 from typing import List, Tuple, Dict, Set, Union
@@ -10,7 +9,8 @@ import torch.nn as nn
 import torch.nn.utils
 import torch.nn.functional as F
 from torch.nn.utils.rnn import pad_packed_sequence, pack_padded_sequence
-from .util import NMT, Hypothesis
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname( __file__ ), '..')))
+from models.util import NMT, Hypothesis
 from vocab.vocab import Vocab
 
 
@@ -134,7 +134,6 @@ class LSTM_AttNN(NMT):
             enc_masks[e_id, src_len:] = 1 # Set the padding word tokens to have 1s rather thans 0s
         return enc_masks.to(self.device)
 
-
     def forward(self, source: List[List[str]], target: List[List[str]]) -> torch.Tensor:
         """
         Takes a mini-batch of source and target sentences, compute the log-likelihood of the target sentences
@@ -203,7 +202,6 @@ class LSTM_AttNN(NMT):
         target_words_log_prob = target_words_log_prob * target_masks[:, 1:] # (b, tgt_len - 1)
         return target_words_log_prob.sum(dim=1) # Return the log prob per sentence
 
-
     def encode(self, source_padded: torch.Tensor,
                source_lengths: List[int]) -> Tuple[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]:
         """
@@ -267,7 +265,6 @@ class LSTM_AttNN(NMT):
         dec_init_state = (init_decoder_hidden, init_decoder_cell)
         # enc_hiddens = (b, src_len, h*2), (init_decoder_hidden=(b, h), init_decoder_cell=(b, h))
         return enc_hiddens, dec_init_state
-
 
     def decode(self, enc_hiddens: torch.Tensor, enc_masks: torch.Tensor,
                dec_init_state: Tuple[torch.Tensor, torch.Tensor],
@@ -339,7 +336,6 @@ class LSTM_AttNN(NMT):
         # size, h = hidden size.
         combined_outputs = torch.stack(combined_outputs).transpose(0, 1) # (batch_size, tgt_len, hidden_size)
         return combined_outputs
-
 
     def step(self, Ybar_t: torch.Tensor, dec_state: Tuple[torch.Tensor, torch.Tensor],
              enc_hiddens: torch.Tensor, enc_hiddens_proj: torch.Tensor,
@@ -416,7 +412,6 @@ class LSTM_AttNN(NMT):
 
         # Returns the updated decoder state, the O_t combined outputs and the attention scores e_t
         return dec_state, O_t, e_t
-
 
     def greedy_search(self, src_sentences: List[List[str]], k_pct: float = 0.1,
                       max_decode_lengths: Union[List[int], int] = None) -> List[List[Union[List[str], int]]]:
@@ -574,23 +569,19 @@ class LSTM_AttNN(NMT):
         # Re-order before returning to re-instate the original sentence ordering
         return [mt[new_to_orig_idx[idx]] for idx in range(len(mt))]
 
+    def save(self, model_path: str, verbose: bool = False) -> None:
+        """
+        Method for saving the model to disk.
 
-    @classmethod
-    def load(cls, model_path: str):
+        Parameters
+        ----------
+        model_path : str
+            A file path detailing where the model should be saved e.g. saved_models/{model}/DeuEng/model.bin
+        verbose : bool, optional
+            If True, then the model_path is printed before saving. The default is False.
         """
-        Method for loading in model weights saved locally to disk.
-        """
-        params = torch.load(model_path, map_location=lambda storage, loc: storage, weights_only=False)
-        model = cls(vocab=params['vocab'], **params['args'])
-        model.load_state_dict(params['state_dict'])
-        return model
-
-    def save(self, model_path: str):
-        """
-        Method for saving the model to a file.
-        """
-        # print(f"Saving model parameters to {model_path}", file=sys.stderr)
-
+        if verbose is True:
+            print(f"Saving model parameters to {model_path}", file=sys.stderr)
         params = {
             'args': dict(embed_size=self.embed_size, hidden_size=self.hidden_size,
                          dropout_rate=self.dropout_rate),
@@ -598,3 +589,23 @@ class LSTM_AttNN(NMT):
             'state_dict': self.state_dict()
         }
         torch.save(params, model_path)
+
+    @classmethod
+    def load(cls, model_path: str) -> LSTM_AttNN:
+        """
+        Method for loading in a model saved to disk.
+
+        Parameters
+        ----------
+        model_path : str
+            A file path detailing where the model should be saved e.g. saved_models/{model}/DeuEng/model.bin
+
+        Returns
+        -------
+        LSTM_AttNN
+            Returns a object instance of this model class with the weights saved to disk.
+        """
+        params = torch.load(model_path, map_location=lambda storage, loc: storage, weights_only=False)
+        model = cls(vocab=params['vocab'], **params['args'])
+        model.load_state_dict(params['state_dict'])
+        return model

@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-
-from collections import namedtuple
+from __future__ import annotations
 import sys, os
 from typing import List, Tuple, Dict, Set, Union
 import numpy as np
@@ -10,7 +9,9 @@ import torch.nn as nn
 import torch.nn.utils
 import torch.nn.functional as F
 from torch.nn.utils.rnn import pad_packed_sequence, pack_padded_sequence
-from .util import NMT, Hypothesis
+
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname( __file__ ), '..')))
+from models.util import NMT, Hypothesis
 from vocab.vocab import Vocab
 
 
@@ -547,22 +548,19 @@ class Fwd_RNN(NMT):
 
         return completed_hypotheses
 
-    @classmethod
-    def load(cls, model_path: str):
+    def save(self, model_path: str, verbose: bool = False) -> None:
         """
-        Method for loading in model weights saved locally to disk.
-        """
-        params = torch.load(model_path, map_location=lambda storage, loc: storage, weights_only=False)
-        model = cls(vocab=params['vocab'], **params['args'])
-        model.load_state_dict(params['state_dict'])
-        return model
+        Method for saving the model to disk.
 
-    def save(self, model_path: str):
+        Parameters
+        ----------
+        model_path : str
+            A file path detailing where the model should be saved e.g. saved_models/{model}/DeuEng/model.bin
+        verbose : bool, optional
+            If True, then the model_path is printed before saving. The default is False.
         """
-        Method for saving the model to a file.
-        """
-        # print(f"Saving model parameters to {model_path}", file=sys.stderr)
-
+        if verbose is True:
+            print(f"Saving model parameters to {model_path}", file=sys.stderr)
         params = {
             'args': dict(embed_size=self.embed_size, hidden_size=self.hidden_size,
                          num_layers=self.num_layers),
@@ -571,19 +569,22 @@ class Fwd_RNN(NMT):
         }
         torch.save(params, model_path)
 
+    @classmethod
+    def load(cls, model_path: str) -> Fwd_RNN:
+        """
+        Method for loading in a model saved to disk.
 
-######################
-#### UNIT TESTING ####
-######################
+        Parameters
+        ----------
+        model_path : str
+            A file path detailing where the model should be saved e.g. saved_models/{model}/DeuEng/model.bin
 
-# ### TESTING below
-# vocab_save_dir = "C:/Users/EH225/Desktop/Online Coursework/CS_224N_NLP/EngDeu_NMT/vocab/deu_to_eng_vocab"
-# vocab = Vocab.load(vocab_save_dir) ## NEED TO LOAD THE CORRECT VOCAB
-# model = Fwd_RNN(64, 64, vocab) # Create a model instance with randomly initialized weights for development
-
-
-# ## TODO: Make sure the description here is accurate. Also consider moving this to the general utils section
-# src_sentence = ["ich", "bin", "froh"]
-# beam_size = 5
-# max_decode_length = 10
-# model.beam_search(src_sentence, beam_size, max_decode_length)
+        Returns
+        -------
+        Fwd_RNN
+            Returns a object instance of this model class with the weights saved to disk.
+        """
+        params = torch.load(model_path, map_location=lambda storage, loc: storage, weights_only=False)
+        model = cls(vocab=params['vocab'], **params['args'])
+        model.load_state_dict(params['state_dict'])
+        return model

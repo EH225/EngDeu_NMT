@@ -8,8 +8,6 @@ from typing import List, Tuple, Dict, Set, Union
 import torch
 import torch.nn as nn
 import torch.nn.utils
-import torch.nn.functional as F
-from torch.nn.utils.rnn import pad_packed_sequence, pack_padded_sequence
 
 Hypothesis = namedtuple('Hypothesis', ['value', 'score'])
 

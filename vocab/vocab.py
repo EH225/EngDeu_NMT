@@ -9,13 +9,16 @@ as cached Vocab data structures for Eng to Deu and Deu to Eng translation models
 """
 
 from __future__ import annotations
+import os, sys
 from collections import Counter
 from itertools import chain
 import json
 import torch
 from typing import List, Tuple
 import sentencepiece as spm
-import numpy as np
+
+BASE_PATH = os.path.abspath(os.path.dirname( __file__))
+DATEDT_DIR = os.path.join(BASE_PATH, "..", "dataset")
 
 ########################
 ### Helper Functions ###
@@ -70,7 +73,8 @@ def train_subword_tokenizer(file_path: str, language_abbv: str, vocab_size: int)
         A list of unique sub-word tokens derived from the corpus used for creating a vocab.
     """
     # Fit a tokenizer to the training data, create a set of sub-word tokens for this language
-    spm.SentencePieceTrainer.train(input=file_path, model_prefix=f"{language_abbv}/{language_abbv}",
+    spm.SentencePieceTrainer.train(input=file_path,
+                                   model_prefix=os.path.join(BASE_PATH, language_abbv, language_abbv),
                                    vocab_size=vocab_size)
     sp = spm.SentencePieceProcessor()
     sp.load(f'{language_abbv}/{language_abbv}.model')  # Loads {language_abbv}.model file generated above
@@ -355,35 +359,37 @@ class Vocab:
         tgt = VocabEntry.from_token_list(tgt_lang, target_word_tokens)
         return Vocab(src_lang, tgt_lang, src, tgt)
 
-    def save(self, file_path: str) -> None:
+    def save(self, file_name: str) -> None:
         """
         Saves the Vocab object to a JSON dump.
 
         Parameters
         ----------
-        file_path : str
-            File path for where to save the JSON vocab object.
+        file_name : str
+            File name for where to save the JSON vocab object relative to this file's location.
+            e.g. "eng_to_deu_vocab"
         """
-        with open(file_path, 'w') as f:
+        with open(os.path.join(BASE_PATH, file_name), 'w') as f:
             json.dump(dict(src_lang=self.src_lang, tgt_lang=self.tgt_lang,
                            src_word2id=self.src.word2id, tgt_word2id=self.tgt.word2id), f, indent=2)
 
     @staticmethod
-    def load(file_path: str) -> Vocab:
+    def load(file_name: str) -> Vocab:
         """
         Loads in a saved Vocab from disk stored as a JSON dumb.
 
         Parameters
         ----------
-        file_path : str
-            File path for where to read the JSON vocab object data.
+        file_name : str
+            File name for where to read the JSON vocab object data relative to this file's location.
+            e.g. "eng_to_deu_vocab"
 
         Returns
         -------
         Vocab
             A Vocab object instance.
         """
-        entry = json.load(open(file_path, 'r'))
+        entry = json.load(open(os.path.join(BASE_PATH, file_name), 'r'))
         return Vocab(entry["src_lang"], entry["tgt_lang"],
                      VocabEntry(entry["src_lang"], entry['src_word2id']),
                      VocabEntry(entry["tgt_lang"], entry['tgt_word2id']))
@@ -400,10 +406,10 @@ torch.serialization.add_safe_globals([VocabEntry, Vocab])
 
 if __name__ == '__main__':
     print("Running tokenization on eng/train.csv")
-    eng_tokens = train_subword_tokenizer("dataset/eng/train.csv", "eng", 30000)
+    eng_tokens = train_subword_tokenizer(os.path.join(DATEDT_DIR, "eng/train.csv"), "eng", 30000)
 
     print("Running tokenization on deu/train.csv")
-    deu_tokens = train_subword_tokenizer("dataset/deu/train.csv", "deu", 30000)
+    deu_tokens = train_subword_tokenizer(os.path.join(DATEDT_DIR, "deu/train.csv"), "deu", 30000)
 
     # Build and cache a Vocab object for English to German translation models
     eng_to_deu_vocab = Vocab.build("eng", "deu", eng_tokens, deu_tokens)

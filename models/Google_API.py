@@ -1,10 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-
+from __future__ import annotations
 import os, sys
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname( __file__ ), '..')))
-
-from collections import namedtuple
 from typing import List, Tuple, Dict, Set, Union
 import numpy as np
 import pandas as pd
@@ -12,10 +9,13 @@ import torch
 import torch.nn as nn
 import torch.nn.utils
 import torch.nn.functional as F
-from torch.nn.utils.rnn import pad_packed_sequence, pack_padded_sequence
+
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname( __file__ ), '..')))
 from models.util import NMT, Hypothesis
 from vocab.vocab import Vocab
 import util
+
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname( __file__ ), '..')))
 
 class Google_API(nn.Module):
     """
