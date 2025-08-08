@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Originally forked from Andrej Karpathy's minGPT, modified from the Stanford XCS224N Assignment 5 code
+Originally forked from Andrej Karpathy's minGPT, heavily modified from the Stanford XCS224N Assignment 5 code.
 """
 from __future__ import annotations
 import sys, os
@@ -11,15 +11,16 @@ import torch
 import torch.nn as nn
 import torch.nn.utils
 import torch.nn.functional as F
-import math, logging  # TODO: Consider adding logging in more places?
+import math, logging
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname( __file__ ), '..')))
-from models.util import NMT, Hypothesis
+from models.util import NMT
 from vocab.vocab import Vocab
 
 logger = logging.getLogger(__name__)
 
-### TODO: Should attn_pdrop be different than resid_pdrop, we can probably make it the same for now
-
+############################
+### RoPE Cache Functions ###
+############################
 
 def get_rope_cache(hs: int, block_size: int) -> torch.Tensor:
     """
@@ -113,6 +114,9 @@ def apply_rope(x: torch.Tensor, rope_cache: torch.Tensor, pos_idx: int = None) -
     rotated_x = rotated_x.view(x.size())
     return rotated_x # Same shape as the original x input tensor (batch_size, nh, T, hs)
 
+########################
+### Attention Layers ###
+########################
 
 class SelfAttentionLayer(nn.Module):
     """
@@ -210,8 +214,9 @@ class SelfAttentionLayer(nn.Module):
         if step is True:  # Utilize the key-value cache if available if performing step-wise decoding
             if self.KV_cache is not None:
                 # Count how many prior tokens, that will be the positional index of the next since we index
-                # starting at 0
-                pos_idx = self.KV_cache.shape(2)
+                # starting at 0 e.g. K.shape = (B, nh, T, hs) if T = 3 then there were 3 prior tokens so the
+                # correct index for the next is also 3 starting at 0 for our indexing
+                pos_idx = self.KV_cache[0].shape[2]
             else: # Otherwise if there is no KV_cache, then this is the first token and is at position 0
                 pos_idx = 0
 
@@ -257,87 +262,6 @@ class SelfAttentionLayer(nn.Module):
 
         # Apply a final linear projection and dropout before returning
         return self.resid_dropout(self.final_proj(y))
-
-
-class EncoderBlock(nn.Module):
-    """
-    Encoder Transformer Attention Block that computes:
-        x = LayerNorm(SelfAttention(x) + x)
-        x = LayerNorm(MLP(x) + x)
-        return x
-    """
-    def __init__(self, hidden_size: int, n_heads: int, block_size: int, dropout_rate: float):
-        super().__init__()
-        # Record the config parameters provided for quick user reference
-        self.hidden_size = hidden_size # The size of each latent vector represenation of each token
-        self.n_heads = n_heads # The number of attention heads
-        self.block_size = block_size # The max length input token sequence (the max possiable tgt_len)
-        self.dropout_rate = dropout_rate # Dropout probability during training
-
-        ######################################################################################################
-        ### Define the model architecture
-
-        self.attn = SelfAttentionLayer(hidden_size, n_heads, block_size, dropout_rate, causal=False)
-
-        self.ln1 = nn.LayerNorm(hidden_size) # Normalization of (att(x) + x) going into the MLP FFNN
-        self.mlp = nn.Sequential(
-            # Each attention adjusted word vector comes in with size hidden_size, then we apply a FFNN to it
-            # with a hidden size of 4 x hidden_size, we apply the same FFNN at each position separately and
-            # identically
-            nn.Linear(hidden_size, 4 * hidden_size),
-            nn.GELU(), # Gaussian Error Linear Unit activation function, non-linearity
-            nn.Linear(4 * hidden_size, hidden_size), # Apply a linear layer to project down to hidden_size
-            nn.Dropout(dropout_rate), # Apply dropout for regularization
-        )
-        self.ln2 = nn.LayerNorm(hidden_size) # Normalize the (mlp(x) + x) combined outputs
-
-    def forward(self, x: torch.Tensor, masks: torch.Tensor = None) -> torch.Tensor:
-        """
-        Defines the forwards pass evaluation through this transformer attention block which involves:
-            x = LayerNorm(SelfAttention(x) + x)
-            x = LayerNorm(MLP(x) + x)
-            return x
-
-        Residual connections are used in this model.
-
-        Parameters
-        ----------
-        x : torch.Tensor
-            An input tensor of size (batch_size, max_word_len, embed_size) containing the word-vectors for
-            each input text for a batch of text inputs.
-        masks : torch.Tensor
-            An input tensor of size (batch_size, seq_len) denoting the location of padding tokens which is
-            used to prevent any token from attending to any of them by setting their attention score logit to
-            -inf before computing the softmax operation across attention scores.
-
-        Returns
-        -------
-        x : torch.Tensor
-            An output tensor of the same size as the input after being passed through this attention block
-            i.e. after we have adjusted the word-vector values to be more context-rich based on the attention
-            scores to word vectors around it.
-        """
-        # Normalize the x input vector and then pass it through the self-attention block, then add x to that
-        # output to form a residual connection and then norm the combined output
-        x = self.ln1(self.attn(x, masks) + x)
-        # Pass the updated x into the multi-layer-perceptron (MLP) FFNN, then add x to that output to form
-        # a residual connection and then norm the combined output one more time
-        x = self.ln2(self.mlp(x) + x)
-        return x # (batch_size, seq_len, hidden_size)
-
-
-class Encoder(nn.Sequential):
-    """
-    This class is used to instantiate the Encoder of the transformer model and is defined to overwrite the
-    default forward class definition so that it expects the same input args as EncoderBlock.forward.
-    """
-    def __init__(self, *args, **kwargs):
-        super(Encoder, self).__init__(*args, **kwargs)
-
-    def forward(self, x: torch.Tensor, masks: torch.Tensor = None) -> torch.Tensor:
-        for block in self: # Iterate overall the encoder blocks, pass the x tensor from one to the next
-            x = block(x, masks)
-        return x
 
 
 class CrossAttentionLayer(nn.Module):
@@ -484,6 +408,93 @@ class CrossAttentionLayer(nn.Module):
         y = self.resid_dropout(self.final_proj(y))
         return y # (batch_size, tgt_len, hidden_size)
 
+#######################
+### Encoder Objects ###
+#######################
+
+class EncoderBlock(nn.Module):
+    """
+    Encoder Transformer Attention Block that computes:
+        x = LayerNorm(SelfAttention(x) + x)
+        x = LayerNorm(MLP(x) + x)
+        return x
+    """
+    def __init__(self, hidden_size: int, n_heads: int, block_size: int, dropout_rate: float):
+        super().__init__()
+        # Record the config parameters provided for quick user reference
+        self.hidden_size = hidden_size # The size of each latent vector represenation of each token
+        self.n_heads = n_heads # The number of attention heads
+        self.block_size = block_size # The max length input token sequence (the max possiable tgt_len)
+        self.dropout_rate = dropout_rate # Dropout probability during training
+
+        ######################################################################################################
+        ### Define the model architecture
+
+        self.attn = SelfAttentionLayer(hidden_size, n_heads, block_size, dropout_rate, causal=False)
+
+        self.ln1 = nn.LayerNorm(hidden_size) # Normalization of (att(x) + x) going into the MLP FFNN
+        self.mlp = nn.Sequential(
+            # Each attention adjusted word vector comes in with size hidden_size, then we apply a FFNN to it
+            # with a hidden size of 4 x hidden_size, we apply the same FFNN at each position separately and
+            # identically
+            nn.Linear(hidden_size, 4 * hidden_size),
+            nn.GELU(), # Gaussian Error Linear Unit activation function, non-linearity
+            nn.Linear(4 * hidden_size, hidden_size), # Apply a linear layer to project down to hidden_size
+            nn.Dropout(dropout_rate), # Apply dropout for regularization
+        )
+        self.ln2 = nn.LayerNorm(hidden_size) # Normalize the (mlp(x) + x) combined outputs
+
+    def forward(self, x: torch.Tensor, masks: torch.Tensor = None) -> torch.Tensor:
+        """
+        Defines the forwards pass evaluation through this transformer attention block which involves:
+            x = LayerNorm(SelfAttention(x) + x)
+            x = LayerNorm(MLP(x) + x)
+            return x
+
+        Residual connections are used in this model.
+
+        Parameters
+        ----------
+        x : torch.Tensor
+            An input tensor of size (batch_size, max_word_len, embed_size) containing the word-vectors for
+            each input text for a batch of text inputs.
+        masks : torch.Tensor
+            An input tensor of size (batch_size, seq_len) denoting the location of padding tokens which is
+            used to prevent any token from attending to any of them by setting their attention score logit to
+            -inf before computing the softmax operation across attention scores.
+
+        Returns
+        -------
+        x : torch.Tensor
+            An output tensor of the same size as the input after being passed through this attention block
+            i.e. after we have adjusted the word-vector values to be more context-rich based on the attention
+            scores to word vectors around it.
+        """
+        # Normalize the x input vector and then pass it through the self-attention block, then add x to that
+        # output to form a residual connection and then norm the combined output
+        x = self.ln1(self.attn(x, masks) + x)
+        # Pass the updated x into the multi-layer-perceptron (MLP) FFNN, then add x to that output to form
+        # a residual connection and then norm the combined output one more time
+        x = self.ln2(self.mlp(x) + x)
+        return x # (batch_size, seq_len, hidden_size)
+
+
+class Encoder(nn.Sequential):
+    """
+    This class is used to instantiate the Encoder of the transformer model and is defined to overwrite the
+    default forward class definition so that it expects the same input args as EncoderBlock.forward.
+    """
+    def __init__(self, *args, **kwargs):
+        super(Encoder, self).__init__(*args, **kwargs)
+
+    def forward(self, x: torch.Tensor, masks: torch.Tensor = None) -> torch.Tensor:
+        for block in self: # Iterate overall the encoder blocks, pass the x tensor from one to the next
+            x = block(x, masks)
+        return x
+
+#######################
+### Decoder Objects ###
+#######################
 
 class DecoderBlock(nn.Module):
     """
@@ -592,22 +603,9 @@ class Decoder(nn.Sequential):
             x = block(x, enc_hiddens, enc_masks, step)
         return x
 
-
-
-### TODO: Probably need some way to reset the key-value caches as well, add some kind of method that can be
-### called. This is complicated and might be better to do as a separate method? IDK, we'll see
-
-
-### Go through and reset the KV_cache to None for each layer of the decoder before and after running this greedy_search op
-
-# TODO: At some point we should be able to do some key-query caching to make things faster, but we'll see I guess
-# I suppose with the transformer, does it need to be sequentially evaluated? Yeah I think it does, especially for
-# prediction. Although I guess for training we could make things a bit more parallelized, but there would be a lot
-# of redundant key-query computations?
-
-
-
-
+#############################
+### Main Model Definition ###
+#############################
 
 class EDTM(NMT):
     """
@@ -688,31 +686,6 @@ class EDTM(NMT):
         # entire vocab for what word token should come next according to the model
         self.target_vocab_proj = nn.Linear(self.hidden_size, len(vocab.tgt), bias=False)
         print(f"Total model parameters: {sum(p.numel() for p in self.parameters())}")
-
-
-
-        # What needs to happen? We get some input sequence in x (batch_size, src_len) in the source language.
-        # We pass that into the embedding layer to convert to word vectors and get (batch_size, src_len, embed_size)
-        # Then we pass that x into the encoder transformer layers. The self-attention calcs are done and we get
-        # out a tensor of context-rich latent embeddings of size (batch_size, src_len, embed_size)
-        # This pre-processing should be done at the very start before any decoding. Now we have those deep
-        # latent encoder representations called x_embed
-
-        # Okay then when it comes predict, the first token we always give the network is <s> to start a new
-        # sentence. That token and all prior decoded tokens go into the network in a different entry point
-        # we feed in (batch_size, tgt_len) -> pass it through the embedding layer and get a tensor of size
-        # (batch_size, tgt_len, embed_size) where tgt_len is the length of the prior tokens so far
-
-        # Okay Then this tensor of prior decoded tokens is passed into a SelfAttention, then those outputs are
-        # combined with the encoder outputs (which are the same each time) and fed into another attention
-        # mechanism, this one being Casual Cross Attention. TBD how exactly this works under the hood, I guess
-        # we use only the input x from the decoder model thus far as the query vectors and the key and value
-        # matrices are larger and contain all the vectors from the encoder + decoder so far so we can attend
-        # each decoder token to everything currently decoded so far + the stuff in the encoder blocks
-
-        # Then that stuff combined goes into the feed forward NN and we repeat this operation a few times
-        # potentially and then at the very end we use the last token attention value through a linear layer
-        # and softmax to generate our yhat distribution.
 
     def generate_sentence_masks(self, enc_hiddens: torch.Tensor, source_lengths: List[int]) -> torch.Tensor:
         """
@@ -900,17 +873,6 @@ class EDTM(NMT):
         for block in self.decoder:
             block.clear_KV_cache()
 
-    ## TODO review everything below
-
-    ## We can probably drop the step function entirely
-    ## We will need to create something else new e.g. a generator function of the decoder blocks to compute
-    ## the greedy search roll out functionality. Will want to use the key-value cache and work on doing that
-    ## somehow. We can stop yielding tokens when we have reached </s> or the max decode length. Should think
-    ## about also making sure that it can hanle the inputs in batches to speed things up.
-
-    ## The hardest part now will be figuring out how to perform greedy search since the decode method does
-    ## everything in parellel, but for greedy search we need to decode sequentially
-
     def greedy_search(self, src_sentences: List[List[str]], k_pct: float = 0.1,
                       max_decode_lengths: Union[List[int], int] = None) -> List[List[Union[List[str], int]]]:
         """
@@ -994,7 +956,7 @@ class EDTM(NMT):
 
             # Pass it through the encoder to generate the encoder hidden states for each word of each input
             # sentence, this gives us a tensor of shape (batch_size, src_len, hidden_size)
-            enc_hiddens, dec_init_state = self.encode(source_padded, source_lengths)
+            enc_hiddens = self.encode(source_padded, source_lengths)
 
             # Generate a set of masks for each source sentence so that we don't attend to padding tokens
             # in the decoder when computing attention scores
@@ -1023,8 +985,6 @@ class EDTM(NMT):
                 # of size hidden_size -> this is what's used to generate the y_hat dist over next words
                 dec_outputs = self.decoder(Y_t.unsqueeze(1), enc_hiddens, enc_masks, step=True) # (b, 1, h)
                 dec_outputs = dec_outputs.squeeze(1) # (b, 1, h) -> (b, h)
-                ### TODO: This is the one step that needs editing ^ this one here, need to compute things
-                ### and cache values for quick use in prod
 
                 # Compute the log probabilities over all possiable next target words using the last decoder
                 # hiddens i.e. the one that is to be fed to self.target_vocab_projection, gives us (b, |V|)
@@ -1071,21 +1031,6 @@ class EDTM(NMT):
 
         return mt
 
-
-                ### TODO: Need to finish the things below - need to pass in enc_hiddens, enc_masks along with
-                ### the most recent word and have the decoder return the estimated next word distribution
-                ### probs. Then use that to create next word predictions. Then run it again.
-                ### We want to ideally do this is a way that we don't duplicate calcs unnecesarily, keep a
-                ### key-value cache in each attention block and iteratively add 1 more row to it each time we
-                ### pass in a new word for each sequence.
-
-                ### Also what we compute attention for need only be for the new input vec, we don't need to
-                ### re-compute the attention scores of all the prior ones again and again.
-
-
-
-
-
     def beam_search():
         # TODO: Finish building out a beam-search method here
         pass
@@ -1130,3 +1075,29 @@ class EDTM(NMT):
         model = cls(vocab=params['vocab'], **params['args'])
         model.load_state_dict(params['state_dict'])
         return model
+
+
+
+### General Outline of Transformer Tensor Flow Logic ###
+# What needs to happen? We get some input sequence in x (batch_size, src_len) in the source language.
+# We pass that into the embedding layer to convert to word vectors and get (batch_size, src_len, embed_size)
+# Then we pass that x into the encoder transformer layers. The self-attention calcs are done and we get
+# out a tensor of context-rich latent embeddings of size (batch_size, src_len, embed_size)
+# This pre-processing should be done at the very start before any decoding. Now we have those deep
+# latent encoder representations called x_embed
+
+# Okay then when it comes predict, the first token we always give the network is <s> to start a new
+# sentence. That token and all prior decoded tokens go into the network in a different entry point
+# we feed in (batch_size, tgt_len) -> pass it through the embedding layer and get a tensor of size
+# (batch_size, tgt_len, embed_size) where tgt_len is the length of the prior tokens so far
+
+# Okay Then this tensor of prior decoded tokens is passed into a SelfAttention, then those outputs are
+# combined with the encoder outputs (which are the same each time) and fed into another attention
+# mechanism, this one being Casual Cross Attention. TBD how exactly this works under the hood, I guess
+# we use only the input x from the decoder model thus far as the query vectors and the key and value
+# matrices are larger and contain all the vectors from the encoder + decoder so far so we can attend
+# each decoder token to everything currently decoded so far + the stuff in the encoder blocks
+
+# Then that stuff combined goes into the feed forward NN and we repeat this operation a few times
+# potentially and then at the very end we use the last token attention value through a linear layer
+# and softmax to generate our yhat distribution.

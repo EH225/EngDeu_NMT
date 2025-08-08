@@ -9,17 +9,20 @@ import sentencepiece as spm
 from typing import List, Tuple, Dict, Union, Optional
 import pandas as pd
 import numpy as np
-import nltk.translate
-from nltk.corpus import wordnet
-from nltk.stem.snowball import SnowballStemmer
-from nltk.tokenize import word_tokenize
-from bert_score import BERTScorer
 import matplotlib.pyplot as plt
 from models.util import Hypothesis, NMT
 import torch, os
 import util
 from tqdm import tqdm
 from termcolor import colored as c
+
+# Imports for computing automatic metrics
+import nltk.translate
+from nltk.corpus import wordnet
+from nltk.stem.snowball import SnowballStemmer
+from nltk.tokenize import word_tokenize
+from bert_score import BERTScorer
+
 
 #####################################################
 ### Model Evaluation Metric Calculation Functions ###
