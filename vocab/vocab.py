@@ -17,7 +17,7 @@ import torch
 from typing import List, Tuple
 import sentencepiece as spm
 
-BASE_PATH = os.path.abspath(os.path.dirname( __file__))
+BASE_PATH = os.path.abspath(os.path.dirname(__file__))
 DATEDT_DIR = os.path.join(BASE_PATH, "..", "dataset")
 
 ########################

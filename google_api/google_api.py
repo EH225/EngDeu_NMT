@@ -4,12 +4,11 @@
 import os, sys
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname( __file__ ), '..')))
 from util import read_corpus
+from google.cloud import translate_v2 as translate
 from typing import List
 import math
 from tqdm import tqdm
-from google.cloud import translate_v2 as translate
 import pandas as pd
-import numpy as np
 
 # Credentials are saved to: C:\Users\<USER>\AppData\Roaming\gcloud\application_default_credentials.json
 

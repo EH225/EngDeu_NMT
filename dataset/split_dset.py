@@ -19,7 +19,7 @@ The English word list was downloaded from:
 import pandas as pd
 import numpy as np
 import os, sys, string
-BASE_PATH = os.path.abspath(os.path.dirname( __file__))
+BASE_PATH = os.path.abspath(os.path.dirname(__file__))
 
 def pct_words_recognized(sentence: str, word_set: set) -> float:
     """

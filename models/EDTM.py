@@ -12,7 +12,7 @@ import torch.nn as nn
 import torch.nn.utils
 import torch.nn.functional as F
 import math, logging
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname( __file__ ), '..')))
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__ ), '..')))
 from models.util import NMT
 from vocab.vocab import Vocab
 
@@ -629,7 +629,8 @@ class EDTM(NMT):
         hidden_size : int
             The size of the hidden states (dimensionality) used by the encoder and decoder LSTM.
         num_layers : int
-            The number of transformer attention blocks to use in the encoder and decoder.
+            The number of transformer attention blocks to use in the encoder and decoder. Must be an int value
+            between 1 and 6.
         n_heads : int
             The number of attention heads to use in both the encoder and decoder. Note, that for this model,
             embed_size == hidden_size and n_heads should evenly divide into hidden_size and also
@@ -645,18 +646,18 @@ class EDTM(NMT):
         super(EDTM, self).__init__()
         self.embed_size = embed_size  # Record the word vector embedding dimensionality
         self.hidden_size = hidden_size # Record the size of the hidden states i.e. key, value, query vectors
-        self.block_size = block_size # The max number of input tokens into the attention blocks
         assert self.embed_size == self.hidden_size, "embed_size must be equal to hidden_size"
-        assert isinstance(num_layers, int) and (1 <= num_layers <= 5), "num_layers must be an int [1, 5]"
+        assert isinstance(num_layers, int) and (1 <= num_layers <= 6), "num_layers must be an int [1, 6]"
         self.num_layers = num_layers # Record how many attention block layers to use
+        self.n_heads = n_heads # Record the number of attention heads applied in each block
         assert self.hidden_size % n_heads == 0, "hidden_size must be evenly divisible by n_heads"
-        self.d = self.hidden_size // n_heads # Record the dimensionality used per head i.e. block_size
-        assert self.d % 2 == 0, "hidden_size // n_heads must result in an even integer"
+        self.hs = self.hidden_size // n_heads # Record the dimensionality used per head i.e. block_size
+        assert self.hs % 2 == 0, "hidden_size // n_heads must result in an even integer"
         self.dropout_rate = dropout_rate # Record the dropout rate parameter
+        self.block_size = block_size # The max number of input tokens into the attention blocks
         self.vocab = vocab # Use self.vocab.src_lang and self.vocab.tgt_lang to access the language labels
-        self.name = "MHTM"
+        self.name = "EDTM"
         # self.lang_pair = (vocab.src_lang, vocab.tgt_lang) # Record the language pair of the translation
-
 
         ######################################################################################################
         ### Define the model architecture
@@ -1076,28 +1077,3 @@ class EDTM(NMT):
         model.load_state_dict(params['state_dict'])
         return model
 
-
-
-### General Outline of Transformer Tensor Flow Logic ###
-# What needs to happen? We get some input sequence in x (batch_size, src_len) in the source language.
-# We pass that into the embedding layer to convert to word vectors and get (batch_size, src_len, embed_size)
-# Then we pass that x into the encoder transformer layers. The self-attention calcs are done and we get
-# out a tensor of context-rich latent embeddings of size (batch_size, src_len, embed_size)
-# This pre-processing should be done at the very start before any decoding. Now we have those deep
-# latent encoder representations called x_embed
-
-# Okay then when it comes predict, the first token we always give the network is <s> to start a new
-# sentence. That token and all prior decoded tokens go into the network in a different entry point
-# we feed in (batch_size, tgt_len) -> pass it through the embedding layer and get a tensor of size
-# (batch_size, tgt_len, embed_size) where tgt_len is the length of the prior tokens so far
-
-# Okay Then this tensor of prior decoded tokens is passed into a SelfAttention, then those outputs are
-# combined with the encoder outputs (which are the same each time) and fed into another attention
-# mechanism, this one being Casual Cross Attention. TBD how exactly this works under the hood, I guess
-# we use only the input x from the decoder model thus far as the query vectors and the key and value
-# matrices are larger and contain all the vectors from the encoder + decoder so far so we can attend
-# each decoder token to everything currently decoded so far + the stuff in the encoder blocks
-
-# Then that stuff combined goes into the feed forward NN and we repeat this operation a few times
-# potentially and then at the very end we use the last token attention value through a linear layer
-# and softmax to generate our yhat distribution.

@@ -10,12 +10,11 @@ import torch.nn as nn
 import torch.nn.utils
 import torch.nn.functional as F
 
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname( __file__ ), '..')))
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from models.util import NMT, Hypothesis
 from vocab.vocab import Vocab
 import util
 
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname( __file__ ), '..')))
 
 class Google_API(nn.Module):
     """

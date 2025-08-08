@@ -13,6 +13,7 @@ Options:
     --hidden-size=<int>         The size of the hidden state [default: 256]
     --dropout-rate=<float>      The dropout probability to apply when training [default: 0.3]
     --num-layers=<int>          The number of layers to use in the encoder and decoder [default: 1]
+    --n_heads=<int>             The number of attention heads to use in a transformer model [default: 8]
     --src-lang=<str>            The source language to translate from [default: deu]
     --tgt-lang=<str>            The target language to translate into [default: eng]
     --train-set=<int>           Specify which training data set to use 1 to 3 [default: 1]
@@ -298,6 +299,8 @@ def run_model_training(model_args: Dict = None, train_params: Dict = None):
     embed_size = int(model_args.get("embed_size", 256)) # Specify the word vec embedding size
     hidden_size = int(model_args.get("hidden_size", 256)) # Specify the hidden state
     num_layers =  int(model_args.get("num_layers", 1)) # Specify how many layers the model has
+    n_heads = int(model_args.get("n_heads", 8)) # Specify how many attention heads to use
+    block_size = int(model_args.get("block_size", 500)) # Specify the max token input seq length
     dropout =  float(model_args.get("dropout_rate", 0.3)) # Specify the dropout rate for training
     src_lang = str(model_args.get("src_lang", "deu")) # Specify the source language (from)
     tgt_lang = str(model_args.get("tgt_lang", "eng")) # Specify the target language (to)
@@ -332,7 +335,7 @@ def run_model_training(model_args: Dict = None, train_params: Dict = None):
         print(f"  Validation data processed: {time.time() - start_time:.1f}s")
 
         # 2). Load in the pre-trained vocab model
-        vocab = Vocab.load(f"vocab/{src_lang}_to_{tgt_lang}_vocab")
+        vocab = Vocab.load(f"{src_lang}_to_{tgt_lang}_vocab")
 
         # 3). Decide whether to use the debug training parameters or not
         train_params = train_params if debug is False else DEBUG_TRAIN_PARAMS.copy()
@@ -348,7 +351,8 @@ def run_model_training(model_args: Dict = None, train_params: Dict = None):
             train_params["warm_start"] = True # Use the prior optimizer saved from prev training
         else: # Otherwise, initialize a new model instance to be trained
             model_kwargs = {"embed_size": embed_size, "hidden_size": hidden_size, "num_layers": num_layers,
-                            "dropout_rate": dropout, "vocab": vocab}
+                            "dropout_rate": dropout, "n_heads": n_heads, "block_size": block_size,
+                            "vocab": vocab}
             model = getattr(all_models, model_class)(**model_kwargs) # Instantiate a new model
             print(f"Instantiating model={model.name} with kwargs:\n", model_kwargs)
             if use_pretreind_embeddings is True: # If creating a new model, we may use pretrained word embeds
@@ -388,4 +392,3 @@ if __name__ == "__main__":
             model_params[key] = (val == "True") # Convert from str to bool
 
     run_model_training(model_params) # Run model training using the args passed
-
