@@ -832,7 +832,7 @@ class EDTM(NMT):
             target_padded = target_padded.loc[:, :self.block_size]
 
         # Call the encoder on the padded source sentences which will be re-used for each step of the decoder
-        enc_hiddens = self.encode(source_padded, source_lengths)
+        enc_hiddens = self.encode(source_padded, source_lengths) # (batch_size, src_len, hidden_size)
 
         # Generate a set of token masks for each source sentence so that we don't attend to padding tokens
         # in the decoder when computing attention scores
