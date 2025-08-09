@@ -847,8 +847,7 @@ class EDTM(NMT):
         # Compute the prob distribution over the vocabulary for each prediction timestep from the decoder,
         # decoder_outputs is what would be used at each timestep, we can process them all at once since we
         # have them all here at once as one big tensor of size (b, tgt_len, V)
-        # prob = F.log_softmax(self.dropout(self.target_vocab_proj(decoder_outputs)), dim=-1)
-        prob = F.log_softmax(self.target_vocab_proj(decoder_outputs), dim=-1) ## TODO: Consider not using dropout here
+        prob = F.log_softmax(self.target_vocab_proj(decoder_outputs), dim=-1)
 
         # Zero out, probabilities for which we have nothing in the target text i.e. the padding, create a bool
         # mask of 0s and 1s by checking that each entry is not equal to the <pad> token, 0s == padding token
