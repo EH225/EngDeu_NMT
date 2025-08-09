@@ -231,7 +231,7 @@ class SelfAttentionLayer(nn.Module):
             self.KV_cache = (K, V) # Update the key-value cache after appending the new token vectors
 
         else: # Aapply RoPE to the entirity of Q and K as-is, this is not step-wise processing
-            # Apply the rotary positional embeddings to the query and key vectors before computing the dot prod
+            # Apply the rotary pos embeddings to the query and key vectors before computing the dot prod
             Q = apply_rope(Q, self.rope_cache)
             K = apply_rope(K, self.rope_cache)
 

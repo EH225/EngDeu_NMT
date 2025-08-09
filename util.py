@@ -84,8 +84,11 @@ def read_corpus(lang: str, subset: str, is_tgt: bool, tokenize: bool = True) -> 
 
 def batch_iter(data: List[Tuple[List[str]]], batch_size: int, shuffle: bool = False):
     """
-    Generator that yields batches of (source, target) sentences in sorted order by length (largest to
-    smallest) until the entire data set is returned in batches, repeats thereafter.
+    Generator that yields batches of (source, target) sentences. If shuffle is True, then the sentence pairs
+    are sorted in descending order of source sentence length before being batched so that within each batch
+    they are sorted by length and also so that sentences of similar length are batched together which reduces
+    the amount of padding used in the batch overall. The order of the batches are then also shuffled so that
+    the longest sentences do not dominate all of the initial batches.
 
     Parameters
     ----------
@@ -94,7 +97,8 @@ def batch_iter(data: List[Tuple[List[str]]], batch_size: int, shuffle: bool = Fa
     batch_size : int
         The number of paired sentences per batch.
     shuffle : bool, optional
-        Whether to randomly shuffle the dataset. The default is False.
+        If True, then the data set is sorted by source sentence length, batched into equal sized blocks, and
+        then randomly shuffled. This should be used during training. The default is False.
 
     Yields
     ------
@@ -105,19 +109,16 @@ def batch_iter(data: List[Tuple[List[str]]], batch_size: int, shuffle: bool = Fa
 
     """
     n_batches = math.ceil(len(data) / batch_size) # How many total batches to iter over the whole data set
-    index_array = list(range(len(data)))
+    batch_idx = list(range(n_batches)) # Number the batches
 
-    if shuffle is True: # Shuffle the ordering of the sentence pairs before batching
-        np.random.shuffle(index_array)
+    if shuffle is True: # Sort by source sentence length before batching, then randomly shuffle the batches
+        data = sorted(data, key=lambda x: len(x[0]), reverse=True) # Sort by source sentence, longest first
+        np.random.shuffle(batch_idx) # Randomly shuffle the ordering of the batchs to use
 
-    for i in range(n_batches): # Iterate over how many batches are required to cover the whole data set
-        indices = index_array[i * batch_size: (i + 1) * batch_size]
-        examples = [data[idx] for idx in indices]
-
-        examples = sorted(examples, key=lambda e: len(e[0]), reverse=True)
+    for i in batch_idx: # Iterate over how many batches are required to cover the whole data set
+        examples = data[(i * batch_size):(i + 1) * batch_size]
         src_sentences = [e[0] for e in examples]
         tgt_sentences = [e[1] for e in examples]
-
         yield (src_sentences, tgt_sentences)
 
 
