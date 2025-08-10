@@ -1092,7 +1092,8 @@ class EDTM(NMT):
             print(f"Saving model parameters to {model_path}", file=sys.stderr)
         params = {
             'args': dict(embed_size=self.embed_size, hidden_size=self.hidden_size, num_layers=self.num_layers,
-                         n_heads = self.n_heads, dropout_rate=self.dropout_rate, block_size=self.block_size),
+                         n_heads=self.n_heads, dropout_rate=self.dropout_rate, block_size=self.block_size,
+                         pos_emb=self.pos_emb),
             'vocab': self.vocab,
             'state_dict': self.state_dict()
         }

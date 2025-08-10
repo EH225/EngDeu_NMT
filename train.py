@@ -324,7 +324,7 @@ def train_model(model: NMT, train_data: List[Tuple[List[str]]], dev_data: List[T
                 return None
 
 
-def run_model_training(model_args: Dict = None, train_params: Dict = None):
+def run_model_training(model_params: Dict = None, train_params: Dict = None):
     """
     This function is a more general version of train_model. It handles instantiating a model and/or reading
     in an existing one in from disk for training. It also handles constructing the data set needed for
@@ -342,30 +342,31 @@ def run_model_training(model_args: Dict = None, train_params: Dict = None):
     None. Loads or instantiates a model, loads in the training and validation data set, calls train_model.
 
     """
-    model_args = {} if model_args is None else model_args
+    model_args = {} if model_params is None else model_params
     train_params = {} if train_params is None else train_params.copy()
 
     # 0). Preliminary argument processing
-    model_class = str(model_args.get("model", "LSTM_Att")) # Designate which model class to train
-    embed_size = int(model_args.get("embed_size", 256)) # Specify the word vec embedding size
-    hidden_size = int(model_args.get("hidden_size", 256)) # Specify the hidden state
-    num_layers =  int(model_args.get("num_layers", 1)) # Specify how many layers the model has
-    n_heads = int(model_args.get("n_heads", 8)) # Specify how many attention heads to use
-    block_size = int(model_args.get("block_size", 500)) # Specify the max token input seq length
-    dropout =  float(model_args.get("dropout_rate", 0.3)) # Specify the dropout rate for training
-    src_lang = str(model_args.get("src_lang", "deu")) # Specify the source language (from)
-    tgt_lang = str(model_args.get("tgt_lang", "eng")) # Specify the target language (to)
+    model_class = str(model_params.get("model", "LSTM_Att")) # Designate which model class to train
+    embed_size = int(model_params.get("embed_size", 256)) # Specify the word vec embedding size
+    hidden_size = int(model_params.get("hidden_size", 256)) # Specify the hidden state
+    num_layers =  int(model_params.get("num_layers", 1)) # Specify how many layers the model has
+    n_heads = int(model_params.get("n_heads", 8)) # Specify how many attention heads to use
+    block_size = int(model_params.get("block_size", 500)) # Specify the max token input seq length
+    dropout =  float(model_params.get("dropout_rate", 0.3)) # Specify the dropout rate for training
+    pos_emb = str(model_params.get("pos_emb", "rope")) # Specify what positional embedding type to use
+    src_lang = str(model_params.get("src_lang", "deu")) # Specify the source language (from)
+    tgt_lang = str(model_params.get("tgt_lang", "eng")) # Specify the target language (to)
     assert src_lang != tgt_lang, "soruce language must differ from target language"
     assert src_lang in ["eng", "deu"], "src_lang must be either eng or deu"
     assert tgt_lang in ["eng", "deu"], "tgt_lang must be either eng or deu"
-    warm_start = model_args.get("warm_start", True) # Whether to try continuing with a prior model
+    warm_start = model_params.get("warm_start", True) # Whether to try continuing with a prior model
     assert isinstance(warm_start, bool), "warm_start must be a bool if provided"
-    train_sets = model_args.get("train_sets", [1]) # Specify which training set to use {1, 2, 3}
+    train_sets = model_params.get("train_sets", [1]) # Specify which training set to use {1, 2, 3}
     train_sets = [train_sets] if isinstance(train_sets, int) else train_sets
     assert isinstance(train_sets, list), "train_sets must be a list of training sets to use or an int"
-    use_pretreind_embeddings = model_args.get("pt_embeddings", True)
+    use_pretreind_embeddings = model_params.get("pt_embeddings", True)
     assert isinstance(use_pretreind_embeddings, bool), "pt_embeddings must be a bool if provided"
-    debug = model_args.get("debug", False) # Specify if the training is to be run in debug mode
+    debug = model_params.get("debug", False) # Specify if the training is to be run in debug mode
     assert isinstance(debug, bool), "debug must be a bool if provided"
 
     for train_set in train_sets: # Loop over all the training sets specified and train
@@ -406,7 +407,7 @@ def run_model_training(model_args: Dict = None, train_params: Dict = None):
         else: # Otherwise, initialize a new model instance to be trained
             model_kwargs = {"embed_size": embed_size, "hidden_size": hidden_size, "num_layers": num_layers,
                             "dropout_rate": dropout, "n_heads": n_heads, "block_size": block_size,
-                            "pos_emb": "learned", "vocab": vocab}
+                            "pos_emb": pos_emb, "vocab": vocab}
             model = getattr(all_models, model_class)(**model_kwargs) # Instantiate a new model
             print(f"Instantiating model={model.name} with kwargs:\n", model_kwargs)
             if use_pretreind_embeddings is True: # If creating a new model, we may use pretrained word embeds
