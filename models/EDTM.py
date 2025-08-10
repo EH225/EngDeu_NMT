@@ -52,7 +52,7 @@ def get_rope_cache(hs: int, block_size: int) -> torch.Tensor:
         rotary positional embedding to key and query vectors within each attention head.
     """
     # Create a [1, 2, ... block_size] tensor of size(block_size, hs/2)
-    t_vals = torch.Tensor(1, range(block_size + 1))
+    t_vals = torch.Tensor(range(1, block_size + 1))
     t_vals = t_vals.expand(hs // 2, block_size ).transpose(0, 1)
     i_vals = torch.Tensor(range(1, hs // 2 + 1))
     theta_i = (1 / 10000) ** (2 * (i_vals - 1) / hs)
