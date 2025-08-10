@@ -216,7 +216,7 @@ def train_model(model: NMT, train_data: List[Tuple[List[str]]], dev_data: List[T
             optimizer.zero_grad() # Zero the grad in the optimizer in case any residual
             batch_size = len(src_sents) # The current batch size, could be less if it is the last batch
 
-            with torch.autocast(device_type=model.device):  # Use BFloat16 where possiable
+            with torch.autocast(device_type=model.device.type):  # Use BFloat16 where possiable
                 example_losses = -model(src_sents, tgt_sents) # (batch_size,) # Compute the loss for each example
             batch_loss = example_losses.sum() # Compute the sum of loss across all batch examples
             loss = batch_loss / batch_size # Normalize by batch size for a standardized loss metric
@@ -404,7 +404,7 @@ def run_model_training(model_args: Dict = None, train_params: Dict = None):
         else: # Otherwise, initialize a new model instance to be trained
             model_kwargs = {"embed_size": embed_size, "hidden_size": hidden_size, "num_layers": num_layers,
                             "dropout_rate": dropout, "n_heads": n_heads, "block_size": block_size,
-                            "vocab": vocab}
+                            "pos_emb": "learned", "vocab": vocab}
             model = getattr(all_models, model_class)(**model_kwargs) # Instantiate a new model
             print(f"Instantiating model={model.name} with kwargs:\n", model_kwargs)
             if use_pretreind_embeddings is True: # If creating a new model, we may use pretrained word embeds

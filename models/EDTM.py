@@ -127,13 +127,15 @@ class SelfAttentionLayer(nn.Module):
     one another, this attention mechanism is used in both the encoder (bi-directional, no masking) and also
     in the decoder (causal with masking).
     """
-    def __init__(self, hidden_size: int, n_heads: int, block_size: int, dropout_rate: int, causal: bool):
+    def __init__(self, hidden_size: int, n_heads: int, block_size: int, dropout_rate: int, pos_emb: str,
+                 causal: bool):
         super().__init__()
         # Record the config parameters provided for quick user reference
         self.hidden_size = hidden_size # The size of each latent vector represenation of each token
         self.n_heads = n_heads # The number of attention heads
         self.block_size = block_size # The max length input token sequence (the max possiable tgt_len)
         self.dropout_rate = dropout_rate # Dropout probability during training
+        self.pos_emb = pos_emb  # Designate which positional embedding type to use i.e. learned or rope
         self.causal = causal # Whether to use causal masking in the attention mechanism
 
         assert hidden_size % n_heads == 0, "hidden_size must be evenly divisible by n_heads"
@@ -148,8 +150,9 @@ class SelfAttentionLayer(nn.Module):
         self.W_v = nn.Linear(hidden_size, hidden_size)
 
         assert (hidden_size // n_heads) % 2 == 0, "d = hidden_size / n_heads must be even for RoPE"
-        # Store the pre-computed rope_cache values for use later, block_size = max sequence input length
-        self.register_buffer("rope_cache", get_rope_cache(hidden_size // n_heads, block_size))
+        if self.pos_emb =="rope":
+            # Store the pre-computed rope_cache values for use later, block_size = max sequence input length
+            self.register_buffer("rope_cache", get_rope_cache(hidden_size // n_heads, block_size))
 
         # Add dropout regularization layers
         self.attn_dropout = nn.Dropout(dropout_rate)
@@ -222,9 +225,10 @@ class SelfAttentionLayer(nn.Module):
             else: # Otherwise if there is no KV_cache, then this is the first token and is at position 0
                 pos_idx = 0
 
-            # Apply the appropriate positional embeddings using RoPE
-            K = apply_rope(K, self.rope_cache, pos_idx)
-            Q = apply_rope(Q, self.rope_cache, pos_idx)
+            if self.pos_emb =="rope":
+                # Apply the appropriate positional embeddings using RoPE
+                K = apply_rope(K, self.rope_cache, pos_idx)
+                Q = apply_rope(Q, self.rope_cache, pos_idx)
 
             if self.KV_cache is not None: # If there are prior tokens, bring in their data
                 # Append the new key and value vectors computed for the next input token to the cache
@@ -234,8 +238,9 @@ class SelfAttentionLayer(nn.Module):
 
         else: # Aapply RoPE to the entirity of Q and K as-is, this is not step-wise processing
             # Apply the rotary pos embeddings to the query and key vectors before computing the dot prod
-            Q = apply_rope(Q, self.rope_cache)
-            K = apply_rope(K, self.rope_cache)
+            if self.pos_emb =="rope":
+                Q = apply_rope(Q, self.rope_cache)
+                K = apply_rope(K, self.rope_cache)
 
         # Compute the self-attention scores by taking the dot product of all key and value vectors
         # Self-attend: (B, nh, T, hs) x (B, nh, hs, T) -> (B, nh, T, T)
@@ -275,13 +280,14 @@ class CrossAttentionLayer(nn.Module):
     This attention block does not use masking because we are attending to input sequence tokens which are
     available at all time steps in the decoder.
     """
-    def __init__(self, hidden_size: int, n_heads: int, block_size: int, dropout_rate: float):
+    def __init__(self, hidden_size: int, n_heads: int, block_size: int, dropout_rate: float, pos_emb: str):
         super().__init__()
         # Record the config parameters provided for quick user reference
         self.hidden_size = hidden_size # The size of each latent vector represenation of each token
         self.n_heads = n_heads # The number of attention heads
         self.block_size = block_size # The max length input token sequence (the max possiable tgt_len)
         self.dropout_rate = dropout_rate # Dropout probability during training
+        self.pos_emb = pos_emb  # Designate which positional embedding type to use i.e. learned or rope
 
         assert hidden_size % n_heads == 0, "hidden_size must be evenly divisible by n_heads"
 
@@ -295,8 +301,9 @@ class CrossAttentionLayer(nn.Module):
         self.W_v = nn.Linear(hidden_size, hidden_size)
 
         assert (hidden_size // n_heads) % 2 == 0, "d = hidden_size / n_heads must be even for RoPE"
-        # Store the pre-computed rope_cache values for use later, block_size = max sequence input length
-        self.register_buffer("rope_cache", get_rope_cache(hidden_size // n_heads, block_size))
+        if self.pos_emb =="rope":
+            # Store the pre-computed rope_cache values for use later, block_size = max sequence input length
+            self.register_buffer("rope_cache", get_rope_cache(hidden_size // n_heads, block_size))
 
         # Add dropout regularization layers
         self.attn_dropout = nn.Dropout(dropout_rate)
@@ -369,8 +376,9 @@ class CrossAttentionLayer(nn.Module):
         else: # If step is False or self.KV_cache is None
             K = self.W_k(x_kv).view(B, T_kv, self.n_heads, hs).transpose(1, 2) # (B, nh, T_kv, hs)
             V = self.W_v(x_kv).view(B, T_kv, self.n_heads, hs).transpose(1, 2) # (B, nh, T_kv, hs)
-            # Apply the rotary positional embeddings to the key and query vectors before saving
-            K = apply_rope(K, self.rope_cache)
+            if self.pos_emb =="rope":
+                # Apply the rotary positional embeddings to the key vectors before saving
+                K = apply_rope(K, self.rope_cache)
             if step is True:  # Cache for later use if step-wise decoding
                 pos_idx = 0 # Start a counter for what positional index this decoder token is at for RoPE
                 self.KV_cache = [K, V, pos_idx] # Store the keys, values and pos_idx for future use
@@ -378,10 +386,12 @@ class CrossAttentionLayer(nn.Module):
         Q = self.W_q(x_q).view(B, T_q, self.n_heads, hs).transpose(1, 2) # (B, nh, T_q, hs)
         # Apply the rotary positional embeddings to the query vector(s) before computing the dot prod
         if step is True: # If step-wise decoding
-            Q = apply_rope(Q, self.rope_cache, pos_idx)
+            if self.pos_emb =="rope":
+                Q = apply_rope(Q, self.rope_cache, pos_idx)
             self.KV_cache[-1] += 1 # Incriment for the next iter, when retrieved we can use it as-is
         else: # If not step-wise decoding, then we have all the query vectors at once to work with
-            Q = apply_rope(Q, self.rope_cache)
+            if self.pos_emb =="rope":
+                Q = apply_rope(Q, self.rope_cache)
 
         # Compute cross-attention scores by taking the dot product of all key and value vectors
         # Self-attend: (B, nh, T_q, hs) x (B, nh, hs, T_kv) -> (B, nh, T_q, T_kv) do matrix mult on the last
@@ -422,18 +432,19 @@ class EncoderBlock(nn.Module):
         x = LayerNorm(MLP(x) + x)
         return x
     """
-    def __init__(self, hidden_size: int, n_heads: int, block_size: int, dropout_rate: float):
+    def __init__(self, hidden_size: int, n_heads: int, block_size: int, dropout_rate: float, pos_emb: str):
         super().__init__()
         # Record the config parameters provided for quick user reference
         self.hidden_size = hidden_size # The size of each latent vector represenation of each token
         self.n_heads = n_heads # The number of attention heads
         self.block_size = block_size # The max length input token sequence (the max possiable tgt_len)
         self.dropout_rate = dropout_rate # Dropout probability during training
+        self.pos_emb = pos_emb  # Designate which positional embedding type to use i.e. learned or rope
 
         ######################################################################################################
         ### Define the model architecture
 
-        self.attn = SelfAttentionLayer(hidden_size, n_heads, block_size, dropout_rate, causal=False)
+        self.attn = SelfAttentionLayer(hidden_size, n_heads, block_size, dropout_rate, pos_emb, causal=False)
 
         self.ln1 = nn.LayerNorm(hidden_size) # Normalization of (att(x) + x) going into the MLP FFNN
         self.mlp = nn.Sequential(
@@ -489,10 +500,8 @@ class Encoder(nn.Sequential):
     """
     def __init__(self, *args, **kwargs):
         super(Encoder, self).__init__(*args, **kwargs)
-        self.ln = nn.LayerNorm(kwargs["hidden_size"])
 
     def forward(self, x: torch.Tensor, masks: torch.Tensor = None) -> torch.Tensor:
-        x = self.ln(x) # Apply layernorm before feeding into the encoder blocks
         for block in self: # Iterate overall the encoder blocks, pass the x tensor from one to the next
             x = block(x, masks)
         return x
@@ -509,21 +518,23 @@ class DecoderBlock(nn.Module):
         x = LayerNorm(MLP(x) + x)
         return x
     """
-    def __init__(self, hidden_size: int, n_heads: int, block_size: int, dropout_rate: float):
+    def __init__(self, hidden_size: int, n_heads: int, block_size: int, dropout_rate: float, pos_emb: str):
         super().__init__()
         # Record the config parameters provided for quick user reference
         self.hidden_size = hidden_size # The size of each latent vector represenation of each token
         self.n_heads = n_heads # The number of attention heads
         self.block_size = block_size # The max length input token sequence (the max possiable tgt_len)
         self.dropout_rate = dropout_rate # Dropout probability during training
+        self.pos_emb = pos_emb  # Designate which positional embedding type to use i.e. learned or rope
 
         ######################################################################################################
         ### Define the model architecture
 
-        self.self_attn = SelfAttentionLayer(hidden_size, n_heads, block_size, dropout_rate, causal=True)
+        self.self_attn = SelfAttentionLayer(hidden_size, n_heads, block_size, dropout_rate, pos_emb,
+                                            causal=True)
         self.ln1 = nn.LayerNorm(hidden_size) # Normalization of x coming out of the self-attention mechanism
 
-        self.cross_attn = CrossAttentionLayer(hidden_size, n_heads, block_size, dropout_rate)
+        self.cross_attn = CrossAttentionLayer(hidden_size, n_heads, block_size, dropout_rate, pos_emb)
         self.ln2 = nn.LayerNorm(hidden_size) # Normalization of x coming out of the cross-attention mechanism
 
         self.mlp = nn.Sequential(
@@ -601,11 +612,9 @@ class Decoder(nn.Sequential):
     """
     def __init__(self, *args, **kwargs):
         super(Decoder, self).__init__(*args, **kwargs)
-        self.ln = nn.LayerNorm(kwargs["hidden_size"])
 
     def forward(self, x: torch.Tensor, enc_hiddens: torch.Tensor, enc_masks: torch.Tensor,
                 step: bool = False) -> torch.Tensor:
-        x = self.ln(x) # Apply layernorm before feeding into the encoder blocks
         for block in self: # Iterate overall the decoder blocks, pass the x tensor from one to the next
             x = block(x, enc_hiddens, enc_masks, step)
         return x
@@ -625,7 +634,7 @@ class EDTM(NMT):
           "Attention is All You Need"
     """
     def __init__(self, embed_size: int, hidden_size: int, num_layers: int, n_heads: int,
-                 dropout_rate: float, block_size: int, vocab: Vocab, *args, **kwargs):
+                 dropout_rate: float, block_size: int, pos_emb: str, vocab: Vocab, *args, **kwargs):
         """
         Bi-directional, multi-headed self-attention encoder + multi-headed attention decoder with
         cross-attention.
@@ -665,6 +674,11 @@ class EDTM(NMT):
         assert self.hs % 2 == 0, "hidden_size // n_heads must result in an even integer"
         self.dropout_rate = dropout_rate # Record the dropout rate parameter
         self.block_size = block_size # The max number of input tokens into the attention blocks
+        pos_emb_types = ["learned", "rope"]
+        assert pos_emb in pos_emb_types, f"pos_emb must be one of: {pos_emb_types}"
+        self.pos_emb = pos_emb # Designate which positional embedding type to use
+        if pos_emb == "learned": # Create learnable parameters for the positional embeddings
+            self.pos_embeddings = nn.Parameter(torch.zeros(1, block_size, embed_size))
         self.vocab = vocab # Use self.vocab.src_lang and self.vocab.tgt_lang to access the language labels
         self.name = "EDTM"
         # self.lang_pair = (vocab.src_lang, vocab.tgt_lang) # Record the language pair of the translation
@@ -680,22 +694,25 @@ class EDTM(NMT):
         self.target_embeddings = nn.Embedding(num_embeddings=len(vocab.tgt), embedding_dim=self.embed_size,
                                               padding_idx=vocab.tgt['<pad>'])
 
+        self.ln_enc = nn.LayerNorm(hidden_size)  # Apply layer norm before the encoder blocks
+        self.ln_dec = nn.LayerNorm(hidden_size)  # Apply layer norm before the decoder blocks
+
         # Transformer blocks for the encoder, we will pass the input sequence through these layers to obtain
         # a deep, context-rich embedding representation of each word in the sequence. These are bi-directional
         # i.e. non-causal, multi-headed self-attention blocks
-        self.encoder = Encoder(*[EncoderBlock(hidden_size, n_heads, block_size, dropout_rate)
-                                 for _ in range(self.num_layers)], hidden_size=hidden_size)
+        self.encoder = Encoder(*[EncoderBlock(hidden_size, n_heads, block_size, dropout_rate, pos_emb)
+                                 for _ in range(num_layers)])
 
         # Transformer blocks for the decoder, we will pass the decoded values available so far through these
         # blocks and combine them with the encoder representations to create vectors that can be used to
         # generate Y_hat distributions across the vocab at each time step using casual cross-attention
-        self.decoder = Decoder(*[DecoderBlock(hidden_size, n_heads, block_size, dropout_rate)
-                                 for _ in range(self.num_layers)], hidden_size=hidden_size)
+        self.decoder = Decoder(*[DecoderBlock(hidden_size, n_heads, block_size, dropout_rate, pos_emb)
+                                 for _ in range(num_layers)])
 
-        self.dropout = nn.Dropout(self.dropout_rate)
+        self.dropout = nn.Dropout(dropout_rate)
         # One final linear layer used to compute the final y-hat distribution of probabilities over the
         # entire vocab for what word token should come next according to the model
-        self.target_vocab_proj = nn.Linear(self.hidden_size, len(vocab.tgt), bias=False)
+        self.target_vocab_proj = nn.Linear(hidden_size, len(vocab.tgt), bias=False)
         print(f"Total model parameters: {sum(p.numel() for p in self.parameters())}")
 
     def generate_sentence_masks(self, enc_hiddens: torch.Tensor, source_lengths: List[int]) -> torch.Tensor:
@@ -745,6 +762,10 @@ class EDTM(NMT):
         # Convert input sentences (already padded to all be the same length src_len) stored as a tensor of
         # word_ids of size  (batch_size, src_len) into a tensor of word embeddings (b, src_len, embed_dim)
         x = self.source_embeddings(source_padded)
+        if self.pos_emb == "learned":  # Add the positional embeddings to the token embeddings
+            x += self.pos_embeddings[:, :x.shape[1], :]
+        x = self.ln_enc(x) # Apply layer normalization before being fed into the encoder blocks
+
         # Generate a set of token masks for each source sentence so that we don't attend to padding tokens
         # in the decoder when computing attention scores
         enc_masks = self.generate_sentence_masks(x, source_lengths) # (batch_size, src_len)
@@ -787,6 +808,9 @@ class EDTM(NMT):
         # We use these actual translated words in our training set to score our model's predictions
         # Convert from word_ids (b, tgt_len) to word vectors ->  b, tgt_len, e)
         Y = self.target_embeddings(target_padded) # (b, tgt_len, e)
+        if self.pos_emb == "learned":  # Add the positional embeddings to the token embeddings
+            Y += self.pos_embeddings[:, :Y.shape[1], :]
+        Y = self.ln_dec(Y) # Apply layer normalization before being fed into the decoder blocks
 
         # Pass the full Y sequence of words (gold-standard translations) into the decoder model for processing
         # in parallel. Also provide the enc_hiddens that will be used for cross-attention calculations. We
@@ -990,11 +1014,15 @@ class EDTM(NMT):
             self.clear_decoder_KV_cache()
 
             while finished < b: # Iterate until all output translations are finished generating
-                Y_t = self.target_embeddings(Y_t) # (b, embed_size) convert from word_ids to word vecs
+                Y_t = self.target_embeddings(Y_t).unsqueeze(1) # (b, 1, e) convert from word_ids to word vecs
+                if self.pos_emb == "learned":  # Add the positional embeddings to the token embeddings
+                    Y_t += self.pos_embeddings[:, :Y_t.shape[1], :]
+                Y_t = self.ln_dec(Y_t) # Apply layer normalization before being fed into the decoder blocks
+
                 # Put in the encoder hiddens and their padding masks + the most recent target word (starting
                 # with <s>) and get out the decoder outputs for the most recent time-step i.e. 1 per sentence
                 # of size hidden_size -> this is what's used to generate the y_hat dist over next words
-                dec_outputs = self.decoder(Y_t.unsqueeze(1), enc_hiddens, enc_masks, step=True) # (b, 1, h)
+                dec_outputs = self.decoder(Y_t, enc_hiddens, enc_masks, step=True) # (b, 1, h)
                 dec_outputs = dec_outputs.squeeze(1) # (b, 1, h) -> (b, h)
 
                 # Compute the log probabilities over all possiable next target words using the last decoder
