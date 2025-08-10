@@ -144,6 +144,7 @@ def train_model(model: NMT, train_data: List[Tuple[List[str]]], dev_data: List[T
     # patience hits the patience limit i.e. when we've evaluated patience limit times without improvement
     max_epochs = params.get("max_epochs", 10) # How many full passes through the training data are allowed
     warm_start = params.get("warm_start", True) # Try to continue off from where we left off last
+    optimizer_kwargs = params.get("optimizer_kwargs", {}) # If there are additional kwargs for the optimizer
     #### Training Parameters ####
 
     print(f'Starting {model.name} training', file=sys.stderr)
@@ -181,7 +182,8 @@ def train_model(model: NMT, train_data: List[Tuple[List[str]]], dev_data: List[T
     training_ppl = pd.Series(dtype=float) # Track the training perplexity measures at each log update
     validation_ppl = pd.Series(dtype=float) # Track the validation perplexity measures at each val update
 
-    optimizer = torch.optim.Adam(model.parameters(), lr=lr) # Initialize the optimizer for training
+    # Initialize the optimizer for training
+    optimizer = torch.optim.Adam(model.parameters(), lr=lr, **optimizer_kwargs)
     # Restore the optimizer's state from the last time we trained if possiable
     if warm_start is True and 'model.bin.optim' in os.listdir(model_save_dir):
         try:
@@ -214,13 +216,13 @@ def train_model(model: NMT, train_data: List[Tuple[List[str]]], dev_data: List[T
             optimizer.zero_grad() # Zero the grad in the optimizer in case any residual
             batch_size = len(src_sents) # The current batch size, could be less if it is the last batch
 
-            example_losses = -model(src_sents, tgt_sents) # (batch_size,) # Compute the loss for each example
+            with torch.autocast(device_type=model.device):  # Use BFloat16 where possiable
+                example_losses = -model(src_sents, tgt_sents) # (batch_size,) # Compute the loss for each example
             batch_loss = example_losses.sum() # Compute the sum of loss across all batch examples
             loss = batch_loss / batch_size # Normalize by batch size for a standardized loss metric
 
             loss.backward() # Compute gradients and clip
-            grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
-
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=grad_clip)
             optimizer.step() # Update model parameters using gradient descent
 
             batch_losses_val = batch_loss.item() # The total loss across all sentence pairs in this batch

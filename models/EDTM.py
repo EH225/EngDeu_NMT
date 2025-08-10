@@ -12,7 +12,7 @@ import torch.nn as nn
 import torch.nn.utils
 import torch.nn.functional as F
 import math, logging
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__ ), '..')))
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from models.util import NMT
 from vocab.vocab import Vocab
 
@@ -489,8 +489,10 @@ class Encoder(nn.Sequential):
     """
     def __init__(self, *args, **kwargs):
         super(Encoder, self).__init__(*args, **kwargs)
+        self.ln = nn.LayerNorm(kwargs["hidden_size"])
 
     def forward(self, x: torch.Tensor, masks: torch.Tensor = None) -> torch.Tensor:
+        x = self.ln(x) # Apply layernorm before feeding into the encoder blocks
         for block in self: # Iterate overall the encoder blocks, pass the x tensor from one to the next
             x = block(x, masks)
         return x
@@ -599,9 +601,11 @@ class Decoder(nn.Sequential):
     """
     def __init__(self, *args, **kwargs):
         super(Decoder, self).__init__(*args, **kwargs)
+        self.ln = nn.LayerNorm(kwargs["hidden_size"])
 
     def forward(self, x: torch.Tensor, enc_hiddens: torch.Tensor, enc_masks: torch.Tensor,
                 step: bool = False) -> torch.Tensor:
+        x = self.ln(x) # Apply layernorm before feeding into the encoder blocks
         for block in self: # Iterate overall the decoder blocks, pass the x tensor from one to the next
             x = block(x, enc_hiddens, enc_masks, step)
         return x
@@ -680,13 +684,13 @@ class EDTM(NMT):
         # a deep, context-rich embedding representation of each word in the sequence. These are bi-directional
         # i.e. non-causal, multi-headed self-attention blocks
         self.encoder = Encoder(*[EncoderBlock(hidden_size, n_heads, block_size, dropout_rate)
-                                 for _ in range(self.num_layers)])
+                                 for _ in range(self.num_layers)], hidden_size=hidden_size)
 
         # Transformer blocks for the decoder, we will pass the decoded values available so far through these
         # blocks and combine them with the encoder representations to create vectors that can be used to
         # generate Y_hat distributions across the vocab at each time step using casual cross-attention
         self.decoder = Decoder(*[DecoderBlock(hidden_size, n_heads, block_size, dropout_rate)
-                                 for _ in range(self.num_layers)])
+                                 for _ in range(self.num_layers)], hidden_size=hidden_size)
 
         self.dropout = nn.Dropout(self.dropout_rate)
         # One final linear layer used to compute the final y-hat distribution of probabilities over the
