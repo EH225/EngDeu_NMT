@@ -216,7 +216,7 @@ def train_model(model: NMT, train_data: List[Tuple[List[str]]], dev_data: List[T
             optimizer.zero_grad() # Zero the grad in the optimizer in case any residual
             batch_size = len(src_sents) # The current batch size, could be less if it is the last batch
 
-            with torch.autocast(device_type=model.device.type):  # Use BFloat16 where possiable
+            with torch.autocast(device_type=model.device.type, dtype=torch.bfloat16):  # Use BFloat16
                 example_losses = -model(src_sents, tgt_sents) # (batch_size,) # Compute the loss for each example
             batch_loss = example_losses.sum() # Compute the sum of loss across all batch examples
             loss = batch_loss / batch_size # Normalize by batch size for a standardized loss metric
