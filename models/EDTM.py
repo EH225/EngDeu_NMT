@@ -902,7 +902,7 @@ class EDTM(NMT):
                                              dim=-1).squeeze(-1) # (b, tgt_len - 1) result
         # Zero out the y_hat values for the padding tokens so that they don't contribute to the sum
         target_words_log_prob = target_words_log_prob * target_masks[:, 1:] # (b, tgt_len - 1)
-        return target_words_log_prob.mean(dim=1) # Return the mean log prob per token per sentence
+        return target_words_log_prob.sum(dim=1) # Return the mean log prob per token per sentence
 
     def clear_decoder_KV_cache(self) -> None:
         """

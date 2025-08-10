@@ -214,18 +214,18 @@ def train_model(model: NMT, train_data: List[Tuple[List[str]]], dev_data: List[T
             train_iter += 1 # Track how many batches have been processed in training for logging
             optimizer.zero_grad() # Zero the grad in the optimizer in case any residual
             batch_size = len(src_sents) # The current batch size, could be less if it is the last batch
+            tgt_words_num_to_predict = sum(len(s[1:]) for s in tgt_sents)  # omitting leading <s>
 
             with torch.autocast(device_type=model.device.type, dtype=torch.bfloat16):  # Use BFloat16
-                example_losses = -model(src_sents, tgt_sents) # (batch_size,) # Compute the loss for each example
+                example_losses = -model(src_sents, tgt_sents) # (batch_size,) # Compute the loss for each obs
             batch_loss = example_losses.sum() # Compute the sum of loss across all batch examples
-            loss = batch_loss / batch_size # Normalize by batch size for a standardized loss metric
+            loss = batch_loss / tgt_words_num_to_predict # Normalize by batch size for a stardard loss metric
 
             loss.backward() # Compute gradients and clip
             torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=grad_clip)
             optimizer.step() # Update model parameters using gradient descent
 
             batch_losses_val = batch_loss.item() # The total loss across all sentence pairs in this batch
-            tgt_words_num_to_predict = sum(len(s[1:]) for s in tgt_sents)  # omitting leading `<s>`
 
             logging_loss += batch_losses_val # For computing the loss of obs within this log printout interval
             logging_tgt_words += tgt_words_num_to_predict # Tracks the total number of tgt words predicted
