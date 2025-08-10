@@ -621,7 +621,7 @@ class EDTM(NMT):
           "Attention is All You Need"
     """
     def __init__(self, embed_size: int, hidden_size: int, num_layers: int, n_heads: int,
-                 dropout_rate: float, block_size: int, pos_emb: str, vocab: Vocab, *args, **kwargs):
+                 dropout_rate: float, block_size: int, vocab: Vocab, *args, **kwargs):
         """
         Bi-directional, multi-headed self-attention encoder + multi-headed attention decoder with
         cross-attention.
