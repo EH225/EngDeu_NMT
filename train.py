@@ -90,7 +90,6 @@ def compute_perplexity(model: NMT, eval_data: List[Tuple[List[str]]], batch_size
     return ppl
 
 
-
 def setup_device(try_gpu: bool = True):
     """
     Setup the device used by PyTorch. If try_gpu is True, then we will attempt to locate GPU hardware.

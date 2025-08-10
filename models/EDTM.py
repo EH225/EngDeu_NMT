@@ -52,7 +52,7 @@ def get_rope_cache(hs: int, block_size: int) -> torch.Tensor:
         rotary positional embedding to key and query vectors within each attention head.
     """
     # Create a [1, 2, ... block_size] tensor of size(block_size, hs/2)
-    t_vals = torch.Tensor(range(1, block_size + 1))
+    t_vals = torch.Tensor(range(block_size + 1))
     t_vals = t_vals.expand(hs // 2, block_size ).transpose(0, 1)
     i_vals = torch.Tensor(range(1, hs // 2 + 1))
     theta_i = (1 / 10000) ** (2 * (i_vals - 1) / hs)
@@ -88,7 +88,7 @@ def apply_rope(x: torch.Tensor, rope_cache: torch.Tensor, pos_idx: int = None) -
 
     Returns
     -------
-    rotated_x : torch.Tensor
+    x_rotated : torch.Tensor
         Returns x but with its last dimension rotated according to RoPE. Same dimensions as x i.e.
         (batch_size, nheads, T, hs).
     """
@@ -111,9 +111,12 @@ def apply_rope(x: torch.Tensor, rope_cache: torch.Tensor, pos_idx: int = None) -
     # Compute sin(t theta_i) x_t^(i) + cos(t theta_i) x_t^(i+1)
     img_components = rope_cache[..., 1] * x[..., ::2] + rope_cache[..., 0] * x[..., 1::2]
 
-    rotated_x = torch.cat((real_components.unsqueeze(-1), 0 * img_components.unsqueeze(-1)), dim=-1)
-    rotated_x = rotated_x.view(x.size())
-    return rotated_x # Same shape as the original x input tensor (batch_size, nh, T, hs)
+    x_rotated = torch.stack([real_components, img_components], dim=-1)  # (..., hs//2, 2)
+    x_rotated = x_rotated.view(x.size())  # (b, nh, T, hs)
+
+    # rotated_x = torch.cat((real_components.unsqueeze(-1), img_components.unsqueeze(-1)), dim=-1)
+    # rotated_x = rotated_x.view(x.size())
+    return x_rotated # Same shape as the original x input tensor (batch_size, nh, T, hs)
 
 ########################
 ### Attention Layers ###
@@ -899,7 +902,7 @@ class EDTM(NMT):
                                              dim=-1).squeeze(-1) # (b, tgt_len - 1) result
         # Zero out the y_hat values for the padding tokens so that they don't contribute to the sum
         target_words_log_prob = target_words_log_prob * target_masks[:, 1:] # (b, tgt_len - 1)
-        return target_words_log_prob.sum(dim=1) # Return the log prob per sentence
+        return target_words_log_prob.mean(dim=1) # Return the mean log prob per token per sentence
 
     def clear_decoder_KV_cache(self) -> None:
         """
