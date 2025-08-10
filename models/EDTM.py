@@ -21,6 +21,7 @@ logger = logging.getLogger(__name__)
 ############################
 ### RoPE Cache Functions ###
 ############################
+# TODO: Section marker
 
 def get_rope_cache(hs: int, block_size: int) -> torch.Tensor:
     """
@@ -117,6 +118,7 @@ def apply_rope(x: torch.Tensor, rope_cache: torch.Tensor, pos_idx: int = None) -
 ########################
 ### Attention Layers ###
 ########################
+# TODO: Section marker
 
 class SelfAttentionLayer(nn.Module):
     """
@@ -411,6 +413,7 @@ class CrossAttentionLayer(nn.Module):
 #######################
 ### Encoder Objects ###
 #######################
+# TODO: Section marker
 
 class EncoderBlock(nn.Module):
     """
@@ -606,6 +609,7 @@ class Decoder(nn.Sequential):
 #############################
 ### Main Model Definition ###
 #############################
+# TODO: Section marker
 
 class EDTM(NMT):
     """
@@ -617,7 +621,7 @@ class EDTM(NMT):
           "Attention is All You Need"
     """
     def __init__(self, embed_size: int, hidden_size: int, num_layers: int, n_heads: int,
-                 dropout_rate: float, block_size: int, vocab: Vocab, *args, **kwargs):
+                 dropout_rate: float, block_size: int, pos_emb: str, vocab: Vocab, *args, **kwargs):
         """
         Bi-directional, multi-headed self-attention encoder + multi-headed attention decoder with
         cross-attention.
@@ -640,6 +644,8 @@ class EDTM(NMT):
             switched off during training, something around 0.2 is typical.
         block_size : int
             The max number of input tokens to be used as context in the transformer attention blocks.
+        pos_emb : str
+            Designates whether to use "learned" or "rope" positional embeddings for this model.
         vocab : Vocab
             A Vocabulary object containing source (src) and target (tgt) language vocabularies.
         """
@@ -827,9 +833,9 @@ class EDTM(NMT):
 
         # Enforce the block_size as the context size limit of the inputs, truncate anything larger
         if source_padded.shape[1] > self.block_size:
-            source_padded = source_padded.loc[:, :self.block_size]
+            source_padded = source_padded[:, :self.block_size]
         if target_padded.shape[1] > self.block_size:
-            target_padded = target_padded.loc[:, :self.block_size]
+            target_padded = target_padded[:, :self.block_size]
 
         # Call the encoder on the padded source sentences which will be re-used for each step of the decoder
         enc_hiddens = self.encode(source_padded, source_lengths) # (batch_size, src_len, hidden_size)
@@ -953,7 +959,7 @@ class EDTM(NMT):
 
             # Enforce the block_size as the context size limit of the inputs, truncate anything larger
             if source_padded.shape[1] > self.block_size:
-                source_padded = source_padded.loc[:, :self.block_size]
+                source_padded = source_padded[:, :self.block_size]
 
             # Pass it through the encoder to generate the encoder hidden states for each word of each input
             # sentence, this gives us a tensor of shape (batch_size, src_len, hidden_size)
