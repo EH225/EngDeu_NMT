@@ -373,7 +373,10 @@ def run_model_training(model_args: Dict = None, train_params: Dict = None):
         print(f"Starting training process for {src_lang} to {tgt_lang}. Data set pre-processing...")
         start_time = time.time()
         # Build the data set for training and validation
-        data_set_name = f"train_{train_set}" if debug is False else "train_debug"
+        if isinstance(train_set, int): # Interpret as an integer
+            data_set_name = f"train_{train_set}" if debug is False else "train_debug"
+        else: # Or as a string if not an int
+            data_set_name = train_set
         train_data_src = util.read_corpus(src_lang, data_set_name, is_tgt=False)
         train_data_tgt = util.read_corpus(tgt_lang, data_set_name, is_tgt=True)
         train_data = list(zip(train_data_src, train_data_tgt))
