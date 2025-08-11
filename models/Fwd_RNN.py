@@ -23,6 +23,7 @@ class Fwd_RNN(NMT):
 
     This is one of the simplest seq2seq model architectures there is.
     """
+
     def __init__(self, embed_size: int, hidden_size: int, num_layers: int, vocab: Vocab, *args, **kwargs):
         """
         Forward RNN encoder + forward RNN decoder model instantiation.
@@ -45,7 +46,7 @@ class Fwd_RNN(NMT):
         self.hidden_size = hidden_size  # Record the hidden size of both the encoder and decoder
         self.vocab = vocab # Use self.vocab.src_lang and self.vocab.tgt_lang to access the language labels
         self.name = "Fwd_RNN"
-
+        self.lang_pair = (vocab.src_lang, vocab.tgt_lang) # Record the language pair of the translation
 
         ######################################################################################################
         ### Define the model architecture
@@ -90,7 +91,6 @@ class Fwd_RNN(NMT):
         self.target_vocab_projection = nn.Linear(in_features=hidden_size, out_features=len(vocab.tgt),
                                                  bias=False)
 
-
     def forward(self, source: List[List[str]], target: List[List[str]]) -> torch.Tensor:
         """
         Takes a mini-batch of source and target sentences, compute the log-likelihood of the target sentences
@@ -112,7 +112,7 @@ class Fwd_RNN(NMT):
         Returns
         -------
         scores : torch.Tensor
-            A Tensor of size (batch_size, ) representing the log-likelihood of generating the target
+            A Tensor of size (batch_size, ) representing the negative log-likelihood of generating the target
             sentence for each example in the input batch.
         """
         assert len(source) == len(target), "The number of source and target sentences must be equal"
@@ -149,8 +149,8 @@ class Fwd_RNN(NMT):
                                              dim=-1).squeeze(-1) # (b, tgt_len - 1) result
         # Zero out the y_hat values for the padding tokens so that they don't contribute to the sum
         target_words_log_prob = target_words_log_prob * target_masks[:, 1:] # (b, tgt_len - 1)
-        return target_words_log_prob.sum(dim=1) # Return the log prob per sentence
-
+        # Return the sum of negative log-likelihoods across all target tokens for each sentence
+        return -target_words_log_prob.sum(dim=1) # Returns a tensor of floats of size (batch_size, )
 
     def encode(self, source_padded: torch.Tensor, source_lengths: List[int]) -> torch.Tensor:
         """
@@ -200,7 +200,6 @@ class Fwd_RNN(NMT):
         dec_init_states = self.h_projection(last_hiddens).reshape(shp[0], self.num_layers, self.hidden_size)
         return dec_init_states # (batch_size, layers, hidden_size)
 
-
     def decode(self, dec_init_states: torch.Tensor, target_padded: torch.Tensor) -> torch.Tensor:
         """
         Computes output hidden-state vectors for each word in each batch of target sentences i.e. runs the
@@ -247,7 +246,6 @@ class Fwd_RNN(NMT):
         # Return a stacked tensor of size (batch_size, tgt_len, hidden_size) containing the hidden states of
         # the decoder at each timestep which would be used to generate y_hat predicted next words
         return torch.stack(hidden_states).transpose(0, 1) # (batch_size, tgt_len, hidden_size)
-
 
     def step(self, Y_t: torch.tensor, dec_states: torch.tensor) -> torch.Tensor:
         """

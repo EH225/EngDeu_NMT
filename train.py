@@ -75,7 +75,7 @@ def compute_perplexity(model: NMT, eval_data: List[Tuple[List[str]]], batch_size
     cuml_tgt_words = 0.0 # Track how many total target language output words were in the eval_data
 
     with torch.no_grad():  # no_grad() signals backend to throw away all gradients
-        for src_sentences, tgt_sentences in util.batch_iter(eval_data, batch_size, shuffle=False):
+        for src_sentences, tgt_sentences in util.batch_iter(eval_data, batch_size, shuffle=True):
             loss = -model(src_sentences, tgt_sentences).sum() # Compute the forward function i.e. the
             # negative log-likelihood of the output target words according to the model
             cuml_loss += loss.item() # Accumulate the loss
@@ -217,7 +217,7 @@ def train_model(model: NMT, train_data: List[Tuple[List[str]]], dev_data: List[T
             tgt_words_num_to_predict = sum(len(s[1:]) for s in tgt_sents)  # omitting leading <s>
 
             with torch.autocast(device_type=model.device.type, dtype=torch.bfloat16):  # Use BFloat16
-                example_losses = -model(src_sents, tgt_sents) # (batch_size,) # Compute the loss for each obs
+                example_losses = model(src_sents, tgt_sents) # (batch_size,) # Compute the loss for each obs
             batch_loss = example_losses.sum() # Compute the sum of loss across all batch examples
             loss = batch_loss / tgt_words_num_to_predict # Normalize by batch size for a stardard loss metric
 
@@ -251,6 +251,7 @@ def train_model(model: NMT, train_data: List[Tuple[List[str]]], dev_data: List[T
 
             # Perform validation data set performance testing periodically
             if train_iter % validation_niter == 0:
+                val_time = time.time() # Update the internal timer for reporting the validation time
                 msg = (f"  Epoch: {epoch}, iter: {train_iter}, cuml avg loss: {cuml_loss / cuml_pairs:.1f}"
                        f" cuml avg ppl: {np.exp(cuml_loss / cuml_tgt_words):.1f}, "
                        f"cuml examples: {cuml_pairs}"
@@ -263,7 +264,7 @@ def train_model(model: NMT, train_data: List[Tuple[List[str]]], dev_data: List[T
                 # Compute perplexity score on the dev_data (i.e. the evaluation set)
                 dev_ppl = compute_perplexity(model, dev_data, batch_size=batch_size_val)
                 msg = (f"  Validation iter {validation_num}, validation set ppl {dev_ppl:.3f}, prior best: "
-                       f"{prior_best_ppl:.3f}")
+                       f"{prior_best_ppl:.3f}, validation eval duration: {time.time() - val_time}")
                 print(msg, file=sys.stderr)
 
                 validation_ppl.loc[train_iter] = dev_ppl # Log the performance
@@ -318,6 +319,10 @@ def train_model(model: NMT, train_data: List[Tuple[List[str]]], dev_data: List[T
                                 param_group['lr'] = lr
 
                             patience = 0 # Reset the patience counter now that lr is lower
+
+                # Add to the train time start value the time it took to run the validation loop so that the
+                # next training interval doesn't include the time of running the above validation steps
+                train_time += (time.time() - val_time)
 
             if epoch == max_epochs:
                 print('Reached maximum number of epochs!', file=sys.stderr)
@@ -411,20 +416,40 @@ def run_model_training(model_params: Dict = None, train_params: Dict = None):
             model = getattr(all_models, model_class)(**model_kwargs) # Instantiate a new model
             print(f"Instantiating model={model.name} with kwargs:\n", model_kwargs)
             if use_pretreind_embeddings is True: # If creating a new model, we may use pretrained word embeds
-                try: # Attempt to load the pre-trained embedding weights if possible
-                    parmas = torch.load(f"saved_models/embeddings/{src_lang}_{embed_size}",
+                # We will prefer to use the ones specific to this model class if they exist i.e. look for
+                # e.g. saved_models/embeddings/LSTM_Att/eng_256 first if the exist, otherwise we can also
+                # default to the more general pre-trained word embeddings e.g. saved_models/embeddings/eng_256
+                skip_general_emb_wts = False
+                try: # Attempt to load the pre-trained embedding weights from this model class subfolder
+                    parmas = torch.load(f"saved_models/embeddings/{model_class}/{src_lang}_{embed_size}",
                                         map_location=lambda storage, loc: storage, weights_only=False)
                     model.source_embeddings.weight = torch.nn.Parameter(parmas['state_dict']['weight'])
 
-                    parmas = torch.load(f"saved_models/embeddings/{tgt_lang}_{embed_size}",
+                    parmas = torch.load(f"saved_models/embeddings/{model_class}/{tgt_lang}_{embed_size}",
                                         map_location=lambda storage, loc: storage, weights_only=False)
                     model.target_embeddings.weight = torch.nn.Parameter(parmas['state_dict']['weight'])
 
-                    print(f"Using pre-trained word embeddings of size: {model.embed_size}")
-
+                    print(f"Using {model_class} pre-trained word embeddings of size: {model.embed_size}")
+                    skip_general_emb_wts = True # If successful, then skip the next section
                 except Exception as e: # If not able to load in pre-trained word-embeddings, then report it
-                    print("Could not load pre-trained word embedding weights")
+                    print(f"Could not load {model_class} pre-trained word embedding weights")
                     print(e)
+
+                if skip_general_emb_wts is False: # If not found above, then try the general folder
+                    try: # Attempt to load the pre-trained embedding weights if possible
+                        parmas = torch.load(f"saved_models/embeddings/{src_lang}_{embed_size}",
+                                            map_location=lambda storage, loc: storage, weights_only=False)
+                        model.source_embeddings.weight = torch.nn.Parameter(parmas['state_dict']['weight'])
+
+                        parmas = torch.load(f"saved_models/embeddings/{tgt_lang}_{embed_size}",
+                                            map_location=lambda storage, loc: storage, weights_only=False)
+                        model.target_embeddings.weight = torch.nn.Parameter(parmas['state_dict']['weight'])
+
+                        print(f"Using general pre-trained word embeddings of size: {model.embed_size}")
+
+                    except Exception as e: # If not able to load in pre-trained word-embeddings, then report
+                        print("Could not load general pre-trained word embedding weights")
+                        print(e)
 
         # Run a full training iteration for this model
         print("train_params:\n", train_params)  # Report the training parameters that will be used in training

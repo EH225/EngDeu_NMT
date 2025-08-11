@@ -684,7 +684,7 @@ class EDTM(NMT):
             self.pos_embeddings = nn.Parameter(torch.zeros(1, block_size, embed_size))
         self.vocab = vocab # Use self.vocab.src_lang and self.vocab.tgt_lang to access the language labels
         self.name = "EDTM"
-        # self.lang_pair = (vocab.src_lang, vocab.tgt_lang) # Record the language pair of the translation
+        self.lang_pair = (vocab.src_lang, vocab.tgt_lang) # Record the language pair of the translation
 
         ######################################################################################################
         ### Define the model architecture
@@ -716,7 +716,7 @@ class EDTM(NMT):
         # One final linear layer used to compute the final y-hat distribution of probabilities over the
         # entire vocab for what word token should come next according to the model
         self.target_vocab_proj = nn.Linear(hidden_size, len(vocab.tgt), bias=False)
-        print(f"Total model parameters: {sum(p.numel() for p in self.parameters())}")
+        # print(f"Total model parameters: {sum(p.numel() for p in self.parameters())}")
 
     def generate_sentence_masks(self, enc_hiddens: torch.Tensor, source_lengths: List[int]) -> torch.Tensor:
         """
@@ -848,7 +848,7 @@ class EDTM(NMT):
         Returns
         -------
         scores : torch.Tensor
-            A Tensor of size (batch_size, ) representing the log-likelihood of generating the target
+            A Tensor of size (batch_size, ) representing the negative log-likelihood of generating the target
             sentence for each example in the input batch. This is used for back-prop in gradient descent.
             This computes the loss of the model over the input batch.
         """
@@ -902,7 +902,8 @@ class EDTM(NMT):
                                              dim=-1).squeeze(-1) # (b, tgt_len - 1) result
         # Zero out the y_hat values for the padding tokens so that they don't contribute to the sum
         target_words_log_prob = target_words_log_prob * target_masks[:, 1:] # (b, tgt_len - 1)
-        return target_words_log_prob.sum(dim=1) # Return the mean log prob per token per sentence
+        # Return the sum of negative log-likelihoods across all target tokens for each sentence
+        return -target_words_log_prob.sum(dim=1) # Returns a tensor of floats of size (batch_size, )
 
     def clear_decoder_KV_cache(self) -> None:
         """

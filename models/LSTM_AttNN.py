@@ -20,6 +20,7 @@ class LSTM_AttNN(NMT):
         - A bi-directional LSTM encoder
         - A LSTM decoder with addative (single layer FFNN) attention
     """
+
     def __init__(self, embed_size: int, hidden_size: int, dropout_rate: float, vocab: Vocab, *args, **kwargs):
         """
         Bi-Directional LSTM with Attention model instantiation.
@@ -44,7 +45,6 @@ class LSTM_AttNN(NMT):
         self.vocab = vocab
         self.name = "LSTM_AttNN"
         self.lang_pair = (vocab.src_lang, vocab.tgt_lang) # Record the language pair of the translation
-
 
         ######################################################################################################
         ### Define the model architecture
@@ -155,7 +155,7 @@ class LSTM_AttNN(NMT):
         Returns
         -------
         scores : torch.Tensor
-            A Tensor of size (batch_size, ) representing the log-likelihood of generating the target
+            A Tensor of size (batch_size, ) representing the negative log-likelihood of generating the target
             sentence for each example in the input batch.
         """
         assert len(source) == len(target), "The number of source and target sentences must be equal"
@@ -200,7 +200,8 @@ class LSTM_AttNN(NMT):
                                              dim=-1).squeeze(-1) # (b, tgt_len - 1) result
         # Zero out the y_hat values for the padding tokens so that they don't contribute to the sum
         target_words_log_prob = target_words_log_prob * target_masks[:, 1:] # (b, tgt_len - 1)
-        return target_words_log_prob.sum(dim=1) # Return the log prob per sentence
+        # Return the sum of negative log-likelihoods across all target tokens for each sentence
+        return -target_words_log_prob.sum(dim=1) # Returns a tensor of floats of size (batch_size, )
 
     def encode(self, source_padded: torch.Tensor,
                source_lengths: List[int]) -> Tuple[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]:

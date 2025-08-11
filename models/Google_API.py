@@ -35,8 +35,9 @@ class Google_API(nn.Module):
         super().__init__()
         self.embed_size = np.nan  # Record the word vector embedding dimensionality
         self.hidden_size = np.nan # Record the size of the hidden states used by the LSTMs
-        self.vocab = Vocab.load(f"vocab/{src_lang}_to_{tgt_lang}_vocab")
+        self.vocab = Vocab.load(f"{src_lang}_to_{tgt_lang}_vocab")
         self.name = "Google_API"
+        self.lang_pair = (self.vocab.src_lang, self.vocab.tgt_lang) # Record the language pair
 
         # Load in the pre-translated sentence translations from cache
         cached_data = []
@@ -54,14 +55,13 @@ class Google_API(nn.Module):
 
         self.dummy_layer = nn.Linear(10, 10)
 
-
     def forward(self, source: List[List[str]], target: List[List[str]]) -> torch.Tensor:
         """
-        Takes a mini-batch of source and target sentences, compute the log-likelihood of the target sentences
-        under the language models learned by the NMT system. Return a tensor of size (batch_size) of all 0s.
+        Takes a mini-batch of source and target sentences, compute the negative log-likelihood of the target
+        sentences under the language models learned by the NMT system.
+        Return a tensor of size (batch_size) of all 0s.
         """
         return torch.zeros(len(source))
-
 
     def greedy_search(self, src_sentences: List[List[str]], *args,
                       **kwargs) -> List[List[Union[List[str], int]]]:

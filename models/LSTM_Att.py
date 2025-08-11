@@ -20,6 +20,7 @@ class LSTM_Att(NMT):
         - A bi-directional LSTM encoder
         - A LSTM decoder with multiplicative attention
     """
+
     def __init__(self, embed_size: int, hidden_size: int, dropout_rate: float, vocab: Vocab, *args, **kwargs):
         """
         Bi-Directional LSTM encoder + LSTM decoder with Attention model instantiation.
@@ -43,8 +44,7 @@ class LSTM_Att(NMT):
         self.dropout_rate = dropout_rate # Record the dropout rate parameter
         self.vocab = vocab # Use self.vocab.src_lang and self.vocab.tgt_lang to access the language labels
         self.name = "LSTM_Att"
-        # self.lang_pair = (vocab.src_lang, vocab.tgt_lang) # Record the language pair of the translation
-
+        self.lang_pair = (vocab.src_lang, vocab.tgt_lang) # Record the language pair of the translation
 
         ######################################################################################################
         ### Define the model architecture
@@ -106,7 +106,6 @@ class LSTM_Att(NMT):
         # zeroed during training, this helps with regularization in the network training
         self.dropout = nn.Dropout(p=dropout_rate)
 
-
     def generate_sentence_masks(self, enc_hiddens: torch.Tensor, source_lengths: List[int]) -> torch.Tensor:
         """
         Generates sentence masks identifying which are pad tokens so that the attention scores computed from
@@ -131,7 +130,6 @@ class LSTM_Att(NMT):
             enc_masks[e_id, src_len:] = 1 # Set the padding word tokens to have 1s rather thans 0s
         return enc_masks.to(self.device)
 
-
     def forward(self, source: List[List[str]], target: List[List[str]]) -> torch.Tensor:
         """
         Takes a mini-batch of source and target sentences, compute the log-likelihood of the target sentences
@@ -153,7 +151,7 @@ class LSTM_Att(NMT):
         Returns
         -------
         scores : torch.Tensor
-            A Tensor of size (batch_size, ) representing the log-likelihood of generating the target
+            A Tensor of size (batch_size, ) representing the negative log-likelihood of generating the target
             sentence for each example in the input batch.
         """
         assert len(source) == len(target), "The number of source and target sentences must be equal"
@@ -198,7 +196,8 @@ class LSTM_Att(NMT):
                                              dim=-1).squeeze(-1) # (b, tgt_len - 1) result
         # Zero out the y_hat values for the padding tokens so that they don't contribute to the sum
         target_words_log_prob = target_words_log_prob * target_masks[:, 1:] # (b, tgt_len - 1)
-        return target_words_log_prob.sum(dim=1) # Return the log prob per sentence
+        # Return the sum of negative log-likelihoods across all target tokens for each sentence
+        return -target_words_log_prob.sum(dim=1) # Returns a tensor of floats of size (batch_size, )
 
 
     def encode(self, source_padded: torch.Tensor,

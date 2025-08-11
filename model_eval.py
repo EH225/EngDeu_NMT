@@ -15,6 +15,7 @@ import torch, os
 import util
 from tqdm import tqdm
 from termcolor import colored as c
+import time
 
 # Imports for computing automatic metrics
 import nltk.translate
@@ -22,7 +23,6 @@ from nltk.corpus import wordnet
 from nltk.stem.snowball import SnowballStemmer
 from nltk.tokenize import word_tokenize
 from bert_score import BERTScorer
-
 
 #####################################################
 ### Model Evaluation Metric Calculation Functions ###
@@ -60,7 +60,7 @@ def compute_perplexity(model: NMT, eval_data: List[Tuple[List[str]]], batch_size
     cuml_tgt_words = 0.0 # Track how many total target language output words were in the eval_data
 
     with torch.no_grad():  # no_grad() signals backend to throw away all gradients
-        for src_sentences, tgt_sentences in util.batch_iter(eval_data, batch_size, shuffle=False):
+        for src_sentences, tgt_sentences in util.batch_iter(eval_data, batch_size, shuffle=True):
             loss = -model(src_sentences, tgt_sentences).sum() # Compute the forward function i.e. the
             # negative log-likelihood of the output target words according to the model
             cuml_loss += loss.item() # Accumulate the loss
@@ -228,7 +228,6 @@ def compute_corpus_meteor_score(mt_df: pd.DataFrame, tgt_lang: str = "deu") -> f
 # TER = Translation Edit Rate is not available through nltk so we will skip it
 # GTM = General Text Matcher is also not available through nltk so we will skip it
 
-
 def compute_corpus_bert_score(mt_df: pd.DataFrame, tgt_lang: str = "deu") -> float:
     """
     Computes a corpus level BERT score (Bidirectional Encoder Representations from Transformers) for the input
@@ -274,38 +273,6 @@ def compute_corpus_bert_score(mt_df: pd.DataFrame, tgt_lang: str = "deu") -> flo
 ######################################################
 ### Model Performance Summary Generation Functions ###
 ######################################################
-
-def load_model(model_class: str, src_lang: str, tgt_lang: str) -> Optional[NMT]:
-    """
-    Helper util function that loads a model from a given model_class for a specified translation language
-    pairing i.e. (src_lang, tgt_lang).
-
-    Parameters
-    ----------
-    model_class : str
-        The name of the model class to load from e.g. "Fwd_RNN", "LSTM_Att", "Google_API" etc.
-    src_lang : str
-        The language of the source sentences (e.g. "eng" or "deu").
-    tgt_lang : str
-        The language of the target sentences (e.g. "eng" or "deu").
-
-    Returns
-    -------
-    model : Optional[NMT]
-        Loads and returns the model instance saved to disk or None if it cannot be located.
-    """
-    assert src_lang != tgt_lang, f"Source and target language must be different, got {src_lang}, {tgt_lang}"
-    translation_name = f"{src_lang.capitalize()}{tgt_lang.capitalize()}"
-    model_save_dir = util.get_model_save_dir(model_class, src_lang, tgt_lang, False)
-    if os.path.exists(f"{model_save_dir}/model.bin"): # Check if there is a model saved in this dir
-        model = getattr(all_models, model_class).load(f"{model_save_dir}/model.bin")  # Load the model
-    elif model_class == "Google_API":
-        model = getattr(all_models, model_class)(src_lang, tgt_lang)
-    else:
-        print(f"No {model_class} {translation_name} saved model on disk")
-        model = None
-    return model
-
 
 def build_eval_dataset(data_set_name: str) -> Dict[str, List[Tuple[List[str]]]]:
     """
@@ -392,7 +359,7 @@ def print_qualitative_comparison(mt_df: pd.DataFrame) -> None:
     Parameters
     ----------
     mt_df : pd.DataFrame
-        Returns a DataFrame with columns ["src", "tgt", "mt"] for each input sentence pair containing a source
+        A DataFrame with columns ["src", "tgt", "mt"] for each input sentence pair containing a source
         sentence, a reference translation, and a machine translation.
     """
     for idx, row in mt_df.iterrows():  # Iterate over every row and print out a sentence comparison
@@ -401,7 +368,7 @@ def print_qualitative_comparison(mt_df: pd.DataFrame) -> None:
         print(f"{c('Model Output', 'magenta')}: {row['mt']}")
 
 
-def generate_eval_summary(model: NMT, eval_data: List[Tuple[List[str]]]) -> pd.Series:
+def generate_model_eval_summary(model: NMT, eval_data: List[Tuple[List[str]]]) -> pd.Series:
     """
     This function generates an evaluation summary (a pd.Series of values) for a passed model on a given
     evaluation data set (eval_data). Evaluation metrics include:
@@ -411,7 +378,7 @@ def generate_eval_summary(model: NMT, eval_data: List[Tuple[List[str]]]) -> pd.S
         - Metric for Evaluation of Translation with Explicit ORdering (METEOR)
         - Bidirectional Encoder Representations from Transformers Score (BERT)
         ...
-        - TODO: ADD MORE HERE
+        - #TODO: ADD MORE HERE
 
     Parameters
     ----------
@@ -483,7 +450,7 @@ def generate_model_summary_table(model_classes: List[str],
                 col = ("Model", "Total Params") # Record the number of trainable parameters in the model
                 summary_table.loc[model_class, col] = util.count_trainable_parameters(model)
                 # Compute automatic performance metrics for this model using the eval data set
-                model_smry = generate_eval_summary(model, eval_data_dict[translation_name])
+                model_smry = generate_model_eval_summary(model, eval_data_dict[translation_name])
                 for eval_metric, metric_score in model_smry.items(): # Add each computed metric score to the
                     # summary df using the multi-index
                     summary_table.loc[model_class, (translation_name, eval_metric)] = metric_score
@@ -494,7 +461,7 @@ def generate_model_summary_table(model_classes: List[str],
                 summary_table.loc[model_class, ("Model", "Hidden Size")] = np.nan
                 summary_table.loc[model_class, ("Model", "Total Params")] = np.nan
                 model = all_models.Google_API(src_lang, tgt_lang) # Load in the model
-                model_smry = generate_eval_summary(model, eval_data_dict[translation_name])
+                model_smry = generate_model_eval_summary(model, eval_data_dict[translation_name])
                 for eval_metric, metric_score in model_smry.items(): # Add each computed metric score to the
                     # summary df using the multi-index
                     if eval_metric == "Perplexity": # NaN out the perplexity values from the Google API eval
@@ -507,14 +474,31 @@ def generate_model_summary_table(model_classes: List[str],
 
     return summary_table
 
-
 ############################
 ### Qualitative Analysis ###
 ############################
 
-run_qual_analysis = False
+def run_qualitative_analysis(model_class: str, src_lang: str, tgt_lang: str) -> pd.DataFrame:
+    """
+    Performs a quick qualitative analysis on a given model class specified for a certain translation
+    direction and returns the machine translation dataframe produced in the process (mt_df)
+    e.g. run_qualitative_analysis("EDTM", "deu", "eng")
 
-if run_qual_analysis:
+    Parameters
+    ----------
+    model_class : str
+        The name of the model class to be evaluated.
+    src_lang : str
+        The language of the source sentences (e.g. "eng" or "deu").
+    tgt_lang : str
+        The language of the target sentences (e.g. "eng" or "deu").
+
+    Returns
+    -------
+    mt_df : pd.DataFrame
+        Returns a DataFrame with columns ["src", "tgt", "mt"] for each input sentence pair containing a source
+        sentence, a reference translation, and a machine translation.
+    """
     # Construct a qualitative assessment data set
     deu_sentences = ['Wo ist die Bank?', 'Was hast du gesagt?', 'Guten Tag.', 'Ich bin neunzehn Jahre alt.',
                      "Bist du ein Doktor?", "Wie geht's es dir?", "Wie viel Uhr ist es?",
@@ -524,28 +508,24 @@ if run_qual_analysis:
                      "Are you a doctor?", "How's it going?", "What time is it?", "How can I help you?",
                      "What did you do on the weekend?"]
 
-    deu_sentences_tokenized = util.tokenize_sentences(deu_sentences, "deu")
-    eng_sentences_tokenized = util.tokenize_sentences(eng_sentences, "eng")
+    src_s, tgt_s = (eng_sentences, deu_sentences) if src_lang == "eng" else (deu_sentences, eng_sentences)
+    qual_eval_data = list(zip(util.tokenize_sentences(src_s, src_lang),
+                              util.tokenize_sentences(tgt_s, tgt_lang)))
 
-    qual_eval_data_DeuEng = list(zip(deu_sentences_tokenized, eng_sentences_tokenized))
-    qual_eval_data_EngDeu = list(zip(eng_sentences_tokenized, deu_sentences_tokenized))
-
-    mt_df = generate_mt_df(load_model("LSTM_Att", "deu", "eng"), qual_eval_data_DeuEng)
+    mt_df = generate_mt_df(all_models.load_model(model_class, src_lang, tgt_lang), qual_eval_data)
+    translation_name = f"{src_lang.capitalize()}{tgt_lang.capitalize()}"
+    print(f"Qualitative Translation Quality Analysis for {model_class} - {translation_name}")
     print_qualitative_comparison(mt_df)
-
-    mt_df = generate_mt_df(load_model("LSTM_Att", "eng", "deu"), qual_eval_data_EngDeu)
-    print_qualitative_comparison(mt_df)
+    return mt_df
 
 
 ## TODO: Get together some easy, medium, and hard sentences based on sentence length
 
-
-## Check if this works using only 1 sentence, or many sentences etc.
-## Stress test the input parameters of the greedy search method
-
 ##############################################################################################################
 
 if __name__ == "__main__":
+    # Example usage:  python model_eval.py --data-set-name=train_tiny
+
     import time
     import argparse
     import nltk
@@ -556,11 +536,11 @@ if __name__ == "__main__":
     nltk.download('punkt_tab')
 
     parser = argparse.ArgumentParser(description='Run model evaluation pipeline')
-    parser.add_argument('data_set_name', type=str, help='The name of the data set to evaluate on.')
+    parser.add_argument('--data-set-name', type=str, help='The name of the data set to evaluate on.')
     args = parser.parse_args()
     data_set_name = args.data_set_name
 
-    model_classes = ['Fwd_RNN', 'LSTM_Att', 'Google_API'] # All the models to evaluate
+    model_classes = ['Fwd_RNN', 'LSTM_Att', 'EDTM', 'Google_API'] # All the models to evaluate
 
     # Generate evaluation tables for the data set i.e. one of ["train_debug", "validation", "test"]
     print(f"Running model evaluation for {model_classes} using dataset={data_set_name}")
@@ -570,75 +550,3 @@ if __name__ == "__main__":
     print(f"\nSummary Table for Dataset={data_set_name}")
     print(summary_table)
     print(f"Runtime: {time.time() - start_time:.2f}") # Report how long it took to run in total
-
-
-
-
-#### TODO: Also do some qualitative analysis, compare the translations EngDeu and DeuEng vs the ""ground truth"
-# in 3 differenet categoreis according to sentence length
-
-### TODO: ADD QUALITATIVE ANALYSIS HERE
-
-
-
-## TODO: Look at whether I should do anything with the below or not
-
-# def decode(args: Dict[str, str]):
-#     """
-#     Performs decoding on a test set, and save the best-scoring decoding results.
-#     If the target gold-standard sentences are given, the function also computes
-#     corpus-level BLEU score.
-#     @param args (Dict): args from cmd line
-#     """
-
-#     print("load test source sentences from [{}]".format(args['TEST_SOURCE_FILE']), file=sys.stderr)
-#     test_data_src = read_corpus(args['TEST_SOURCE_FILE'], source='src', vocab_size=3000)
-#     if args['TEST_TARGET_FILE']:
-#         print("load test target sentences from [{}]".format(args['TEST_TARGET_FILE']), file=sys.stderr)
-#         test_data_tgt = read_corpus(args['TEST_TARGET_FILE'], source='tgt', vocab_size=2000)
-
-#     print("load model from {}".format(args['MODEL_PATH']), file=sys.stderr)
-#     model = NMT.load(args['MODEL_PATH'])
-#     model = model.to(setup_device(args['--gpu']))
-
-#     hypotheses = beam_search(model, test_data_src,
-#                             #  beam_size=int(args['--beam-size']),                      EDIT: BEAM SIZE USED TO BE 5
-#                               beam_size=10,
-#                               max_decoding_time_step=int(args['--max-decoding-time-step']))
-
-#     if args['TEST_TARGET_FILE']:
-#         top_hypotheses = [hyps[0] for hyps in hypotheses]
-#         bleu_score = compute_corpus_bleu_score(test_data_tgt, top_hypotheses)
-#         print('Corpus BLEU: {}'.format(bleu_score), file=sys.stderr)
-
-#     with open(args['OUTPUT_FILE'], 'w', encoding='utf-8') as f:
-#         for src_sent, hyps in zip(test_data_src, hypotheses):
-#             top_hyp = hyps[0]
-#             hyp_sent = ''.join(top_hyp.value).replace('▁', ' ')
-#             f.write(hyp_sent + '\n')
-
-
-# def beam_search(model: NMT, test_data_src: List[List[str]], beam_size: int, max_decoding_time_step: int) -> List[List[Hypothesis]]:
-#     """ Run beam search to construct hypotheses for a list of src-language sentences.
-#     @param model (NMT): NMT Model
-#     @param test_data_src (List[List[str]]): List of sentences (words) in source language, from test set.
-#     @param beam_size (int): beam_size (# of hypotheses to hold for a translation at every step)
-#     @param max_decoding_time_step (int): maximum sentence length that Beam search can produce
-#     @returns hypotheses (List[List[Hypothesis]]): List of Hypothesis translations for every source sentence.
-#     """
-#     was_training = model.training
-#     model.eval()
-
-#     hypotheses = []
-#     with torch.no_grad():
-#         for src_sent in tqdm(test_data_src, desc='Decoding', file=sys.stdout):
-#             example_hyps = model.beam_search(src_sent, beam_size=beam_size, max_decoding_time_step=max_decoding_time_step)
-
-#             hypotheses.append(example_hyps)
-
-#     if was_training: model.train(was_training)
-
-#     return hypotheses
-
-
-
