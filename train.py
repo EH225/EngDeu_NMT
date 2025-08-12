@@ -143,6 +143,7 @@ def train_model(model: NMT, train_data: List[Tuple[List[str]]], dev_data: List[T
     # patience hits the patience limit i.e. when we've evaluated patience limit times without improvement
     max_epochs = params.get("max_epochs", 10) # How many full passes through the training data are allowed
     warm_start = params.get("warm_start", True) # Try to continue off from where we left off last
+    epsilon = params.get("eps", 0.0) # The smoothing epsilon parameter for model.forward
     optimizer_kwargs = params.get("optimizer_kwargs", {}) # If there are additional kwargs for the optimizer
     #### Training Parameters ####
 
@@ -217,7 +218,7 @@ def train_model(model: NMT, train_data: List[Tuple[List[str]]], dev_data: List[T
             tgt_words_num_to_predict = sum(len(s[1:]) for s in tgt_sents)  # omitting leading <s>
 
             with torch.autocast(device_type=model.device.type, dtype=torch.bfloat16):  # Use BFloat16
-                example_losses = model(src_sents, tgt_sents) # (batch_size,) # Compute the loss for each obs
+                example_losses = model(src_sents, tgt_sents, epsilon) # (batch_size,)
             batch_loss = example_losses.sum() # Compute the sum of loss across all batch examples
             loss = batch_loss / tgt_words_num_to_predict # Normalize by batch size for a stardard loss metric
 
