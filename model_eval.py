@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
-This module contains helper functions for model evaluation e.g. functions to compute model perplexity and
-BLEU scores etc. and also model summary comparison tables.
+This module contains helper functions for model evaluation e.g. functions to compute model perplexity, BLEU
+scores, METEOR, BERTscores etc. and also model summary comparison tables.
 """
 
 import models.all_models as all_models
@@ -526,7 +526,6 @@ def run_qualitative_analysis(model_class: str, src_lang: str, tgt_lang: str) -> 
 if __name__ == "__main__":
     # Example usage:  python model_eval.py --data-set-name=train_tiny
 
-    import time
     import argparse
     import nltk
     # Make sure the download the things we need for model evaluation

@@ -130,7 +130,7 @@ class LSTM_Att(NMT):
             enc_masks[e_id, src_len:] = 1 # Set the padding word tokens to have 1s rather thans 0s
         return enc_masks.to(self.device)
 
-    def forward(self, source: List[List[str]], target: List[List[str]]) -> torch.Tensor:
+    def forward(self, source: List[List[str]], target: List[List[str]], eps: float = 0.05) -> torch.Tensor:
         """
         Takes a mini-batch of source and target sentences, compute the log-likelihood of the target sentences
         under the language models learned by the NMT system. Essentially, pass the soruce words into the
@@ -147,6 +147,10 @@ class LSTM_Att(NMT):
         target : List[List[str]]
             A list of target source language sentences i.e. a list of sentences where each sentence is a list
             of sub-word tokens wrapped by <s> and </s>.
+        eps : float
+            An epsilon value for label smoothing i.e. how much weight to re-allocate away from the true y
+            class label and disperse uniformly across all other output classes we can predict i.e. word
+            tokens. This serves as a method of regularization and is 0.05 by default.
 
         Returns
         -------
@@ -194,6 +198,15 @@ class LSTM_Att(NMT):
         # target_padded[:, 1:]
         target_words_log_prob = torch.gather(prob[:, :-1, :], index=target_padded[:, 1:].unsqueeze(-1),
                                              dim=-1).squeeze(-1) # (b, tgt_len - 1) result
+        if eps > 0: # Apply label smoothing, put (1-eps) weight on the true class and eps / (|V|-1) on all
+            # others when computing the cross-entropy loss values. From the above, we already have the values
+            # for the true class label, so we can down-weight that by (1-eps) and then add to reach the goal
+            sum_all_others = log_prob[:, :-1, :].sum(-1) - target_words_log_prob # Sum log prob of all others
+            mean_all_others = sum_all_others / (log_prob.shape[-1] - 1) # Divide by (|V| - 1) to normalize
+            # Take the weighted sum, down-weight the log-prob of the true class to (1-eps) and add all the
+            # others at a weight of eps each i.e. the sum of all others gets a collective weight of eps
+            target_words_log_prob = target_words_log_prob * (1 - eps) + mean_all_others * (eps)
+
         # Zero out the y_hat values for the padding tokens so that they don't contribute to the sum
         target_words_log_prob = target_words_log_prob * target_masks[:, 1:] # (b, tgt_len - 1)
         # Return the sum of negative log-likelihoods across all target tokens for each sentence

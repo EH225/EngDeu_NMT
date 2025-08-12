@@ -270,7 +270,8 @@ class SelfAttentionLayer(nn.Module):
 
         y = y.transpose(1, 2).contiguous().view(B, T, H) # Re-assemble all head outputs side by side
 
-        # Apply a final linear projection and dropout before returning
+        # Apply a final linear projection and dropout before returning i.e. before this sub-layer output is
+        # added to the sub-layer input again via a residual connection and normalized
         return self.resid_dropout(self.final_proj(y))
 
 
@@ -419,7 +420,8 @@ class CrossAttentionLayer(nn.Module):
 
         y = y.transpose(1, 2).contiguous().view(B, T_q, H) # Re-assemble all head outputs side by side
 
-        # Apply a final linear projection and dropout before returning
+        # Apply a final linear projection and dropout before returning i.e. before this sub-layer output is
+        # added to the sub-layer input again via a residual connection and normalized
         y = self.resid_dropout(self.final_proj(y))
         return y # (batch_size, tgt_len, hidden_size)
 
@@ -825,7 +827,7 @@ class EDTM(NMT):
         # for each possiable output word in the vocab after passing them through a linear projection layer
         return decoder_outputs # (batch_size, tgt_len, hidden_size)
 
-    def forward(self, source: List[List[str]], target: List[List[str]]) -> torch.Tensor:
+    def forward(self, source: List[List[str]], target: List[List[str]], eps: float = 0.05) -> torch.Tensor:
         """
         Takes a batch of source and target sentences, compute the log-likelihood of the target sentences
         under the language models learned by the NMT system. Essentially, pass the soruce words into the
@@ -844,6 +846,10 @@ class EDTM(NMT):
         target : List[List[str]]
             A list of target source language sentences i.e. a list of sentences where each sentence is a list
             of sub-word tokens wrapped by <s> and </s>.
+        eps : float
+            An epsilon value for label smoothing i.e. how much weight to re-allocate away from the true y
+            class label and disperse uniformly across all other output classes we can predict i.e. word
+            tokens. This serves as a method of regularization and is 0.05 by default.
 
         Returns
         -------
@@ -853,6 +859,7 @@ class EDTM(NMT):
             This computes the loss of the model over the input batch.
         """
         assert len(source) == len(target), "The number of source and target sentences must be equal"
+        assert 0 <= eps <= 0.3, "eps must be a float value between 0 and 0.3"
         # Record the length of each input sentence with a truncated limit of block_size upper bound
         source_lengths = [min(len(s), self.block_size) for s in source]
 
@@ -884,7 +891,7 @@ class EDTM(NMT):
         # Compute the prob distribution over the vocabulary for each prediction timestep from the decoder,
         # decoder_outputs is what would be used at each timestep, we can process them all at once since we
         # have them all here at once as one big tensor of size (b, tgt_len, V)
-        prob = F.log_softmax(self.target_vocab_proj(decoder_outputs), dim=-1)
+        log_prob = F.log_softmax(self.target_vocab_proj(decoder_outputs), dim=-1)
 
         # Zero out, probabilities for which we have nothing in the target text i.e. the padding, create a bool
         # mask of 0s and 1s by checking that each entry is not equal to the <pad> token, 0s == padding token
@@ -893,15 +900,25 @@ class EDTM(NMT):
         # Compute log probability of generating the true target words provided in this example i.e. compute
         # the cross-entropy loss by pulling out the model's y-hat values for the true target words. For each
         # word in each sentence, pull out the y_hat prob associated with the true target word at time t.
-        # prob is (b, tgt_len, V) and describes the probability distribution over the next word after the
+        # log_prob is (b, tgt_len, V) and describes the probability distribution over the next word after the
         # current time step t. I.e. the first Y_t token is <s> and the first y_hat is the distribution of
-        # what the model thinks should come afterwards. Hence prob[:, :-1, :] aligns with the true Y_t words
-        # target_padded[:, 1:]. tgt_len includes <s> at the start and </s> at the end. We don't want to
+        # what the model thinks should come afterwards. Hence log_prob[:, :-1, :] aligns wtih the true Y_t
+        # words. target_padded[:, 1:]. tgt_len includes <s> at the start and </s> at the end. We don't want to
         # include the prob of <s> but we do want to include the prob of predicting </s> to end the sentence.
-        target_words_log_prob = torch.gather(prob[:, :-1, :], index=target_padded[:, 1:].unsqueeze(-1),
+        target_words_log_prob = torch.gather(log_prob[:, :-1, :], index=target_padded[:, 1:].unsqueeze(-1),
                                              dim=-1).squeeze(-1) # (b, tgt_len - 1) result
+        if eps > 0: # Apply label smoothing, put (1-eps) weight on the true class and eps / (|V|-1) on all
+            # others when computing the cross-entropy loss values. From the above, we already have the values
+            # for the true class label, so we can down-weight that by (1-eps) and then add to reach the goal
+            sum_all_others = log_prob[:, :-1, :].sum(-1) - target_words_log_prob # Sum log prob of all others
+            mean_all_others = sum_all_others / (log_prob.shape[-1] - 1) # Divide by (|V| - 1) to normalize
+            # Take the weighted sum, down-weight the log-prob of the true class to (1-eps) and add all the
+            # others at a weight of eps each i.e. the sum of all others gets a collective weight of eps
+            target_words_log_prob = target_words_log_prob * (1 - eps) + mean_all_others * (eps)
+
         # Zero out the y_hat values for the padding tokens so that they don't contribute to the sum
         target_words_log_prob = target_words_log_prob * target_masks[:, 1:] # (b, tgt_len - 1)
+
         # Return the sum of negative log-likelihoods across all target tokens for each sentence
         return -target_words_log_prob.sum(dim=1) # Returns a tensor of floats of size (batch_size, )
 

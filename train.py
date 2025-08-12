@@ -337,7 +337,7 @@ def run_model_training(model_params: Dict = None, train_params: Dict = None):
 
     Parameters
     ----------
-    model_args : Dict, optional
+    model_params : Dict, optional
         A dictionary of model and data set config arguments, see the module doc string for details.
     train_params : Dict, optional
         An optional dictionary specifying training parameters such as learning rate and batch size etc.
@@ -347,7 +347,7 @@ def run_model_training(model_params: Dict = None, train_params: Dict = None):
     None. Loads or instantiates a model, loads in the training and validation data set, calls train_model.
 
     """
-    model_args = {} if model_params is None else model_params
+    model_params = {} if model_params is None else model_params
     train_params = {} if train_params is None else train_params.copy()
 
     # 0). Preliminary argument processing
@@ -355,7 +355,7 @@ def run_model_training(model_params: Dict = None, train_params: Dict = None):
     embed_size = int(model_params.get("embed_size", 256)) # Specify the word vec embedding size
     hidden_size = int(model_params.get("hidden_size", 256)) # Specify the hidden state
     num_layers =  int(model_params.get("num_layers", 1)) # Specify how many layers the model has
-    n_heads = int(model_params.get("n_heads", 8)) # Specify how many attention heads to use
+    n_heads = int(model_params.get("n_heads", 4)) # Specify how many attention heads to use
     block_size = int(model_params.get("block_size", 500)) # Specify the max token input seq length
     dropout =  float(model_params.get("dropout_rate", 0.3)) # Specify the dropout rate for training
     pos_emb = str(model_params.get("pos_emb", "rope")) # Specify what positional embedding type to use
