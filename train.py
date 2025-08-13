@@ -265,7 +265,7 @@ def train_model(model: NMT, train_data: List[Tuple[List[str]]], dev_data: List[T
                 # Compute perplexity score on the dev_data (i.e. the evaluation set)
                 dev_ppl = compute_perplexity(model, dev_data, batch_size=batch_size_val)
                 msg = (f"  Validation iter {validation_num}, validation set ppl {dev_ppl:.3f}, prior best: "
-                       f"{prior_best_ppl:.3f}, validation eval duration: {time.time() - val_time}")
+                       f"{prior_best_ppl:.3f}, validation eval duration: {time.time() - val_time:.1f}")
                 print(msg, file=sys.stderr)
 
                 validation_ppl.loc[train_iter] = dev_ppl # Log the performance
