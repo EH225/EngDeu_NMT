@@ -24,14 +24,12 @@ Options:
 
 import math, time, sys, os
 from docopt import docopt
-from models.util import Hypothesis, NMT
+from models.util import NMT
 import pandas as pd
 import numpy as np
 from typing import List, Tuple, Dict, Set, Union
-from tqdm import tqdm
-from vocab.vocab import Vocab, VocabEntry
+from vocab.vocab import Vocab
 from pathlib import Path
-import sentencepiece as spm
 import models.all_models as all_models
 import util
 import torch
@@ -130,7 +128,7 @@ def train_model(model: NMT, train_data: List[Tuple[List[str]]], dev_data: List[T
     batch_size_train = params.get("batch_size_train", 32) # Batch size to use during training
     batch_size_val = params.get("batch_size_val", 64) # Batch size to use during validation eval
     lr = params.get("lr", 5e-3) # Specify the learning rate of the model
-    grad_clip = params.get("grad_clip", 5) # Gradient clipping threshold
+    grad_clip = params.get("grad_clip", 2) # Gradient clipping threshold
     validation_niter = params.get("validation_niter", 1000) # How often to evaluate on the validation data set
     log_niter = params.get("log_niter", 100) # How often to print training log updates
     patience_lim = params.get("patience_lim", 3) # How many val evals to wait for the model to improve before
