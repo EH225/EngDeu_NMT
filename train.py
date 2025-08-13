@@ -76,7 +76,7 @@ def compute_perplexity(model: NMT, eval_data: List[Tuple[List[str]]], batch_size
 
     with torch.no_grad():  # no_grad() signals backend to throw away all gradients
         for src_sentences, tgt_sentences in util.batch_iter(eval_data, batch_size, shuffle=True):
-            loss = -model(src_sentences, tgt_sentences).sum() # Compute the forward function i.e. the
+            loss = model(src_sentences, tgt_sentences).sum() # Compute the forward function i.e. the
             # negative log-likelihood of the output target words according to the model
             cuml_loss += loss.item() # Accumulate the loss
             tgt_word_num_to_predict = sum(len(s[1:]) for s in tgt_sentences)  # omitting leading `<s>`
