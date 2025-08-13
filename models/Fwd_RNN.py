@@ -91,7 +91,7 @@ class Fwd_RNN(NMT):
         self.target_vocab_projection = nn.Linear(in_features=hidden_size, out_features=len(vocab.tgt),
                                                  bias=False)
 
-    def forward(self, source: List[List[str]], target: List[List[str]], eps: float = 0.05) -> torch.Tensor:
+    def forward(self, source: List[List[str]], target: List[List[str]], eps: float = 0.0) -> torch.Tensor:
         """
         Takes a mini-batch of source and target sentences, compute the log-likelihood of the target sentences
         under the language models learned by the NMT system. Essentially, pass the soruce words into the

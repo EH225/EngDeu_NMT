@@ -827,7 +827,7 @@ class EDTM(NMT):
         # for each possiable output word in the vocab after passing them through a linear projection layer
         return decoder_outputs # (batch_size, tgt_len, hidden_size)
 
-    def forward(self, source: List[List[str]], target: List[List[str]], eps: float = 0.05) -> torch.Tensor:
+    def forward(self, source: List[List[str]], target: List[List[str]], eps: float = 0.0) -> torch.Tensor:
         """
         Takes a batch of source and target sentences, compute the log-likelihood of the target sentences
         under the language models learned by the NMT system. Essentially, pass the soruce words into the

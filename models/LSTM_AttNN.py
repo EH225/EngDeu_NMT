@@ -134,7 +134,7 @@ class LSTM_AttNN(NMT):
             enc_masks[e_id, src_len:] = 1 # Set the padding word tokens to have 1s rather thans 0s
         return enc_masks.to(self.device)
 
-    def forward(self, source: List[List[str]], target: List[List[str]], eps: float = 0.05) -> torch.Tensor:
+    def forward(self, source: List[List[str]], target: List[List[str]], eps: float = 0.0) -> torch.Tensor:
         """
         Takes a mini-batch of source and target sentences, compute the log-likelihood of the target sentences
         under the language models learned by the NMT system. Essentially, pass the soruce words into the
