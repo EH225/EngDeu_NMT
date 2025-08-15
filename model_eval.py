@@ -17,16 +17,9 @@ from tqdm import tqdm
 from termcolor import colored as c
 import time
 
-# Imports for computing automatic metrics
-import nltk.translate
-from nltk.corpus import wordnet
-from nltk.stem.snowball import SnowballStemmer
-from nltk.tokenize import word_tokenize
-from bert_score import BERTScorer
-
-#####################################################
-### Model Evaluation Metric Calculation Functions ###
-#####################################################
+############################################
+### Automatic Model Evaluation Functions ###
+############################################
 
 def compute_perplexity(model: NMT, eval_data: List[Tuple[List[str]]], batch_size: int = 32) -> float:
     """
@@ -77,11 +70,11 @@ def compute_perplexity(model: NMT, eval_data: List[Tuple[List[str]]], batch_size
 
 def compute_corpus_bleu_score(mt_df: pd.DataFrame, tgt_lang: str = "deu") -> float:
     """
-    Computes a corpus level BLEU score (Bilingual evaluation understudy) for the input machine translation
-    dataframe (mt_df) provided.
+    Computes a corpus level BLEU (Bilingual evaluation understudy) score for the input machine translation
+    dataframe (mt_df) provided. See https://www.nltk.org/api/nltk.translate.bleu for details.
 
-    This lexical-based evaluation metric of translation quality utilizes n-gram matching to evaluate the
-    similarity of 2 sentences in the same language by using word precision and is the most commonly cited
+    This lexical-based automatic evaluation metric of translation quality utilizes n-gram matching to evaluate
+    the similarity of 2 sentences in the same language by using word precision and is the most commonly cited
     machine translation evaluation metric. While simple and fast to compute, it does not allows for the usage
     of synonyms or stemming, this metric looks for exact n-gram matches and also does not account for recall
     i.e. does not consider what percent of the reference translation is matched, only how much of the
@@ -120,6 +113,8 @@ def compute_corpus_bleu_score(mt_df: pd.DataFrame, tgt_lang: str = "deu") -> flo
     float
         A corpus-level BLEU score ranging from 0 to 1.
     """
+    import nltk.translate
+    from nltk.tokenize import word_tokenize
     # We can provide multiple references (gold-standard translations), but here we only have 1 associated
     # with each from the data set so we use only 1 reference each
     assert tgt_lang in ["eng", "deu"], "tgt_lang must be either 'eng' or 'deu'"
@@ -130,13 +125,14 @@ def compute_corpus_bleu_score(mt_df: pd.DataFrame, tgt_lang: str = "deu") -> flo
 
 def compute_corpus_nist_score(mt_df: pd.DataFrame, tgt_lang: str = "deu") -> float:
     """
-    Computes a corpus level NIST score (National Institute of Standards and Technology) for the input machine
-    translation dataframe (mt_df) provided.
+    Computes a corpus level NIST (National Institute of Standards and Technology) score for the input machine
+    translation dataframe (mt_df) provided. See https://www.nltk.org/api/nltk.translate.nist_score.html for
+    details.
 
-    This lexical-based evaluation metric of translation quality utilizes n-gram matching (much like BLEU) to
-    evaluate the similarity of 2 sentences in the same language by using word precision. The main difference
-    of this measure vs BLEU is that n-gram matches are weighted according to their frequency of occurance with
-    higher weight allocated to less frequeny n-grams (referred to as information weighting).
+    This lexical-based automatic evaluation metric of translation quality utilizes n-gram matching (much like
+    BLEU) to evaluate the similarity of 2 sentences in the same language by using word precision. The main
+    difference of this measure vs BLEU is that n-gram matches are weighted according to their frequency of
+    occurance with higher weight allocated to less frequeny n-grams (referred to as information weighting).
 
     While simple and fast to compute, it does not allows for the usage of synonyms or stemming, this metric
     looks for exact n-gram matches and also does not account for recall i.e. does not consider what percent
@@ -162,6 +158,8 @@ def compute_corpus_nist_score(mt_df: pd.DataFrame, tgt_lang: str = "deu") -> flo
     float
         A corpus-level NIST score ranging from 0 to 1.
     """
+    import nltk.translate
+    from nltk.tokenize import word_tokenize
     # We can provide multiple references (gold-standard translations), but here we only have 1 associated
     # with each from the data set so we use only 1 reference each
     assert tgt_lang in ["eng", "deu"], "tgt_lang must be either 'eng' or 'deu'"
@@ -172,13 +170,14 @@ def compute_corpus_nist_score(mt_df: pd.DataFrame, tgt_lang: str = "deu") -> flo
 
 def compute_corpus_meteor_score(mt_df: pd.DataFrame, tgt_lang: str = "deu") -> float:
     """
-    Computes a corpus level METEOR score (Metric for Evaluation of Translation with Explicit ORdering) for
+    Computes a corpus level METEOR (Metric for Evaluation of Translation with Explicit ORdering) score for
     the input machine translation dataframe (mt_df) provided.
+    See: https://www.nltk.org/api/nltk.translate.meteor_score.html for details.
 
-    This lexical-based evaluation metric of translation quality is an improvement on some of the short comings
-    of BLEU and considers factors such as word order, synonyms, stemming, and exact word matches. But it still
-    has a limited ability to compare the meanings of translations directly and assess their overall fluency.
-    This measure tends to correlate better with human evaluation than BLEU scores.
+    This lexical-based automatic evaluation metric of translation quality is an improvement on some of the
+    short comings of BLEU and considers factors such as word order, synonyms, stemming, and exact word
+    matches. But it still has a limited ability to compare the meanings of translations directly and assess
+    their overall fluency. This measure tends to correlate better with human evaluation than BLEU scores.
 
     METEOR scores are obtained by computing a precision and recall of unigram matches by computing:
         Precision = matched unigrams / unigrams in hypothesis (% of translation content matched)
@@ -213,6 +212,10 @@ def compute_corpus_meteor_score(mt_df: pd.DataFrame, tgt_lang: str = "deu") -> f
     float
         A corpus-level METEOR score ranging from 0 to 1.
     """
+    import nltk.translate
+    from nltk.corpus import wordnet
+    from nltk.stem.snowball import SnowballStemmer
+    from nltk.tokenize import word_tokenize
     assert tgt_lang in ["eng", "deu"], "tgt_lang must be either 'eng' or 'deu'"
     lang = "english" if tgt_lang == "eng" else "german"
     stemmer = SnowballStemmer(lang) # Initialize the word stemmer
@@ -225,15 +228,120 @@ def compute_corpus_meteor_score(mt_df: pd.DataFrame, tgt_lang: str = "deu") -> f
         meteor_scores_list.append(score)
     return np.mean(meteor_scores_list)
 
-# TER = Translation Edit Rate is not available through nltk so we will skip it
-# GTM = General Text Matcher is also not available through nltk so we will skip it
+
+def compute_corpus_rouge_score(mt_df: pd.DataFrame) -> float:
+    """
+    Computes a corpus level ROUGE score (Recall-Oriented Understudy for Gisting Evaluation) for the input
+    machine translation dataframe (mt_df) provided. See https://huggingface.co/spaces/evaluate-metric/rouge
+    for more details.
+
+    This lexical-based automatic evaluation metric of translation quality combines n-gram matching with
+    longest common subsequence metrics for a combined overall socre. ROUGE is often used for evaluating the
+    quality of text summarization, but is also used for machine translation tasks. There are a number of
+    variants used including:
+        ROUGE-N: Measures the number of n-gram matches between the hypothesis and summary as a percentage of
+            n-grams in the reference (recall) or hypothesis (precision). ROUGE-1 and ROUGE-2 are most common.
+        ROUGE-L: Measures the length of the longest common subsequence of words between the hypothesis and
+            reference and divides by the number of words in the reference (recall) or hypothesis (precision).
+        ROUGE-W: Very similar to ROUGE-L but gives a higher performance score to matching subsequences with
+            longer contiguous matches. This is a weighted version of the longest-common-subsequence approach.
+        ROUGE-S: This metric looks at skip-bigrams i.e. bigram matches that may have some other non-matching
+            word inbetween which is similar to ROUGE-2 but with a bit more flexibility.
+
+    This function uses ROUGE-1, ROUGE-2, and ROUGE-L and returns an F1 score.
+
+    Like many other lexical-based automatic evaluation metrics, ROUGE does not directly measure whether the
+    translation is semantically correct, it looks for matching words between the hypothesis and reference
+    provided and does not recognize the usage of synonyms and may penalized semantically equlivalent
+    word-order differences.
+
+    The ROUGE score per sentence ranges from [0, 1] and the corpus level score is obtained by averaging over
+    all sentence-level F1 scores. Higher scores are considered better with a score of at least 0.5 being
+    generally considered good.
+
+    Parameters
+    ----------
+    mt_df : pd.DataFrame
+        A machine translation dataframe containing a column "tgt" with the gold-standard translations and
+        another column labeled "mt" with the machine translations from the model.
+
+    Returns
+    -------
+    float
+        A corpus-level composite ROUGE score ranging from 0 to 1.
+
+    """
+    # ROUGE can also be computed with another package
+    # from rouge_score import rouge_scorer
+
+    # scorer = rouge_scorer.RougeScorer(['rouge1', 'rouge2', 'rougeL'], use_stemmer=True)
+    # results = {"rouge1": 0, "rouge2": 0, "rougeL": 0}
+    # for idx, row in mt_df.iterrows():
+    #     for metric, score in scorer.score(row["tgt"], row["mt"]).items():
+    #         results[metric] += score.fmeasure
+
+    # for key, val in results.items():
+    #     results[key] = val / len(mt_df)
+
+    # Using the evaluate package
+    import evaluate
+    rouge_scorer = evaluate.load('rouge') # Instantiate the ROUGE scorer obj
+    results = rouge_scorer.compute(predictions=list(mt_df["mt"].values),
+                                 references=[[x] for x in mt_df["tgt"].to_list()])
+    return (results["rouge1"] + results["rouge2"] + results["rougeL"]) / 3
+
+
+def compute_corpus_ter_score(mt_df: pd.DataFrame) -> float:
+    """
+    Computes a corpus level TER (Translation Edit Rate) socre for the input machine translation dataframe
+    (mt_df) provided. See https://huggingface.co/spaces/evaluate-metric/ter for details.
+
+    This lexical-based automatic evaluation metric of translation quality measures the number of edit
+    operations (insertions, deletions, substitutions, and shifts of word sequences) required to convert the
+    machine translation into the reference translation provided. Similar to other matching algorithms such
+    as BLEU, this metric penalizes a machine translation for the usage of synonyms or differing word order
+    from the provided human reference translation so it is best analyzed at the corpus level.
+
+    The TER metric is computed as the number of edits divided by the number of words in the reference. It
+    therefore computes how many edits were required as a percentage of the size of the reference itself i.e.
+    more edits are expected for longer sentences (on average) given the same translation quality.
+
+    TER does not directly measure whether the translation is semantically correct e.g. the deletion of just
+    1 word (e.g. "not") could make the model translation exactly match the reference, but entirely flip the
+    meaning of the sentence. While the TER would be 1 / n (generally small), the meaning could be very much
+    impacted by the edit made. Not all edits have the same impact on sentence meaning.
+
+    The TER score per sentence ranges from [0, 100+] and the corpus level score is obtained by averaging over
+    all sentence scores. Lower scores (i.e. fewer edits) are considered better and a score of 65 or less
+    is generally considered good. TER scores > 100 are theoredically possiable, but uncommon. E.g. if the
+    hypothesis contained more words than the reference and none of them matched, then the first n would be
+    substituted to match the reference and the rest thereafter would be deleted which would add up to more
+    edit operations than there were reference words.
+
+    Parameters
+    ----------
+    mt_df : pd.DataFrame
+        A machine translation dataframe containing a column "tgt" with the gold-standard translations and
+        another column labeled "mt" with the machine translations from the model.
+
+    Returns
+    -------
+    float
+        A corpus-level TER score ranging from 0 to 100+.
+    """
+    import evaluate
+    ter_metric = evaluate.load("ter") # Load the TER metric evaluator and run it on the sentences provided
+    results = ter_metric.compute(predictions=list(mt_df["mt"].values),
+                                 references=[[x] for x in mt_df["tgt"].to_list()])
+    return results["score"]
+
 
 def compute_corpus_bert_score(mt_df: pd.DataFrame, tgt_lang: str = "deu") -> float:
     """
     Computes a corpus level BERT score (Bidirectional Encoder Representations from Transformers) for the input
     machine translation dataframe (mt_df) provided. See: https://github.com/Tiiiger/bert_score for details.
 
-    This embedding model-based evaluation metric of translation quality is an improvement on some of the
+    This embedding model-based automatic evaluation metric of translation quality is an improvement on many
     lexical-based methods by using a large-language model transformer (BERT) to generate deep contextual
     representations of the input sentences provided. BERT is better able to handle synonym similarity, word
     order choice, context, and paraphrasing than other simplier models. Its main limitation is that it takes
@@ -248,11 +356,20 @@ def compute_corpus_bert_score(mt_df: pd.DataFrame, tgt_lang: str = "deu") -> flo
     the highest score. A score of 0.7-0.8 is generally considered good, 0.8-0.9 is considered very good, and
     above 0.9 is considered excellent.
 
+    Parameters
+    ----------
+    mt_df : pd.DataFrame
+        A machine translation dataframe containing a column "tgt" with the gold-standard translations and
+        another column labeled "mt" with the machine translations from the model.
+    tgt_lang : str
+        The target language i.e. the language of the references and machine translation model outputs.
+
     Returns
     -------
     float
         A corpus-level BERT score ranging from 0 to 1.
     """
+    from bert_score import BERTScorer
     assert tgt_lang in ["eng", "deu"], "tgt_lang must be either 'eng' or 'deu'"
     lang = "en" if tgt_lang == "eng" else "de"
     bert_model = BERTScorer(model_type='bert-base-multilingual-cased', lang=lang, rescale_with_baseline=True)
@@ -260,14 +377,83 @@ def compute_corpus_bert_score(mt_df: pd.DataFrame, tgt_lang: str = "deu") -> flo
     return F1.mean().item() # Average across all sentences and return a float
 
 
-# ROUGE, BLEURT as well, COMET
-# Use PyRouge: https://medium.com/nlplanet/two-minutes-nlp-learn-the-rouge-metric-by-examples-f179cc285499
+def compute_corpus_bleurt_score(mt_df: pd.DataFrame) -> float:
+    """
+    Computes a corpus level BLEURT score (Bilingual Evaluation Understudy with Representations from
+    Transformers) for the input machine translation dataframe (mt_df) provided.
+    See: https://github.com/google-research/bleurt for details.
+
+    This embedding model-based automatic evaluation metric of translation quality is an improvement on many
+    lexical-based methods and simplier model-based methods such as BERTScore. The BLEURT model begins with a
+    pre-trained BERT model, which is then trained on synthetic sentence pairs before being fine-tuned on
+    data sets of human evaluations of translation quality. This makes BLEURT more correlated with human
+    evaluator scorings than non-learned evaluation metrics such as BERTScore.
+    See https://research.google/blog/evaluating-natural-language-generation-with-bleurt/ for details.
+
+    BLEURT scores trypically range from -1 to +1 with higher scores being preferred. Scores of 0.7 or greater
+    generally reflect strong translation quality.
+
+    Parameters
+    ----------
+    mt_df : pd.DataFrame
+        A machine translation dataframe containing a column "tgt" with the gold-standard translations and
+        another column labeled "mt" with the machine translations from the model.
+
+    Returns
+    -------
+    float
+        A corpus-level BLEURT score ranging from -1 to +1.
+    """
+    import evaluate
+    bleurt = evaluate.load("bleurt", module_type="metric", checkpoint="BLEURT-20") # Multi-lingual model
+    results = bleurt.compute(predictions=mt_df["mt"].tolist(), references=mt_df["tgt"].tolist())
+    return sum(results["scores"]) / len(results["scores"])
 
 
-# TODO: Add more automatic evaluation metrics here as well, make sure they all follow the same input conventions
-# For each one, discuss 1). the calculation methodology 2). the strengths and weakensses 3). the range of
-# possiable output values i.e. how to interpret it and 4). what a "good" score is on average
-# Look at what Attention is All you Need uses for the machine translation rankings of model performance
+def compute_corpus_comet_score(mt_df: pd.DataFrame) -> float:
+    """
+    Computes a corpus level COMET score (Crosslingual Optimized Metric for Evaluation of Translation) for the
+    input machine translation dataframe (mt_df) provided. See: https://github.com/Unbabel/COMET for details.
+
+    This embedding, model-based automatic evaluation metric of machine translation quality uses a dual
+    cross-lingual modeling technique to evaluate the quality of a hypothesis machine translation in the
+    context of both the input source text and reference text. It is a neural-based approach that, unlike
+    BERTScore, was trained using a supervised regression-based approach that tries to mimic the quality
+    scores assigned by human evaluators by utilizing data sets of human evaluation scores. COMET scores
+    therefore generally are more highly correlated with expert human evaluation scores than other methods.
+    See https://aclanthology.org/2020.emnlp-main.213.pdf for details.
+
+    This function utilizes the default model as of August 2025 (Unbabel/wmt22-comet-da) which can be found
+    here: https://huggingface.co/Unbabel/wmt22-comet-da. COMET quality scores produces range from 0 to 1 with
+    higher scores being preferred. Scores of 0.8 and above are generally considered to be good quality
+    translations.
+
+    Parameters
+    ----------
+    mt_df : pd.DataFrame
+        A machine translation dataframe containing a column "tgt" with the gold-standard translations and
+        another column labeled "mt" with the machine translations from the model.
+
+    Returns
+    -------
+    float
+        A corpus-level COMET score ranging from 0 to 1.
+    """
+    from comet import download_model, load_from_checkpoint  # Import required dependency
+    model_path = download_model("Unbabel/wmt22-comet-da") # Download the evaluation model
+    model = load_from_checkpoint(model_path) # Load the model used for mt eval
+    data = [{"src": row["src"], "mt": row["mt"], "ref": row["tgt"]} for idx, row in mt_df.iterrows()]
+    model_output = model.predict(data, batch_size=32, gpus=1) # Compute evaluations for each sentence
+    return model_output.system_score # Return a combined averaged score across all examples [0, 1]
+
+    ## Evaluation can also be done using the evaluate package
+    # from evaluate import load
+    # comet_metric = load('comet')
+    # source = ["Dem Feuer konnte Einhalt geboten werden", "Schulen und Kindergärten wurden eröffnet."]
+    # hypothesis = ["They were able to control the fire.", "Schools and kindergartens opened"]
+    # reference = ["They were able to control the fire.", "Schools and kindergartens opened"]
+    # results = comet_metric.compute(predictions=hypothesis, references=reference, sources=source)
+    # print([round(v, 1) for v in results["scores"]])
 
 
 ######################################################
@@ -376,9 +562,11 @@ def generate_model_eval_summary(model: NMT, eval_data: List[Tuple[List[str]]]) -
         - Bi-Lingual Evaluation Understudy (BLEU)
         - National Institute of Standards and Technology (NIST)
         - Metric for Evaluation of Translation with Explicit ORdering (METEOR)
+        - Recall-Oriented Understudy for Gisting Evaluation (ROUGE)
+        - Translation Edit Rate (TER)
         - Bidirectional Encoder Representations from Transformers Score (BERT)
-        ...
-        - #TODO: ADD MORE HERE
+        - Bilingual Evaluation Understudy with Representations from Transformers (BLEURT)
+        - Crosslingual Optimized Metric for Evaluation of Translation (COMET)
 
     Parameters
     ----------
@@ -404,8 +592,11 @@ def generate_model_eval_summary(model: NMT, eval_data: List[Tuple[List[str]]]) -
     eval_summary.loc["BLEU"] = compute_corpus_bleu_score(mt_df, model.vocab.tgt_lang)
     eval_summary.loc["NIST"] = compute_corpus_nist_score(mt_df, model.vocab.tgt_lang)
     eval_summary.loc["METEOR"] = compute_corpus_meteor_score(mt_df, model.vocab.tgt_lang)
+    eval_summary.loc["ROUGE"] = compute_corpus_rouge_score(mt_df)
+    eval_summary.loc["TER"] = compute_corpus_ter_score(mt_df)
     eval_summary.loc["BERT"] = compute_corpus_bert_score(mt_df, model.vocab.tgt_lang)
-    # TODO: Add other evaluation metrics here
+    eval_summary.loc["BLEURT"] = compute_corpus_bleurt_score(mt_df)
+    eval_summary.loc["COMET"] = compute_corpus_comet_score(mt_df)
     return eval_summary
 
 
@@ -434,7 +625,7 @@ def generate_model_summary_table(model_classes: List[str],
         A comparative performance summary across models.
     """
     # Enumerate all the evaluation metrics used
-    metrics = ["Perplexity", "BLEU", "NIST", "METEOR", "BERT"]
+    metrics = ["Perplexity", "BLEU", "NIST", "METEOR", "ROUGE", "TER", "BERT", "BLEURT", "COMET"]
     cols = pd.MultiIndex.from_tuples([("Model", x) for x in ["Embed Size", "Hidden Size", "Total Params"]] +
                                      [("DeuEng", x) for x in metrics] + [("EngDeu", x) for x in metrics])
     summary_table = pd.DataFrame(index=model_classes, columns=cols)

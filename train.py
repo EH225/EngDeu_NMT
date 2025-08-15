@@ -30,63 +30,13 @@ import numpy as np
 from typing import List, Tuple, Dict, Set, Union
 from vocab.vocab import Vocab
 from pathlib import Path
+from model_eval import compute_perplexity
 import models.all_models as all_models
 import util
 import torch
 import torch.nn.utils
 
 DEBUG_TRAIN_PARAMS = {"log_niter": 1, "validation_niter": 3}
-
-### NOTE: This function is copied here from model_eval so that we do not need to import that module to run
-### this one. Importing model_eval requires importing bert-score which is not part of the default Google Colab
-### venv and takes a long time to install. Avoiding that makes it faster to begin a training run.
-
-def compute_perplexity(model: NMT, eval_data: List[Tuple[List[str]]], batch_size: int = 32) -> float:
-    """
-    Computes a perplexity score of the model over an evaluation data set (eval_data). Note, this is a walk
-    forward metric and is therefore a more generous evaluation metric. I.e. for each roll out step, we give
-    the model the prior word from the translation provided and ask it to predict the next y_hat. At each step,
-    the decoder model is prompted with the prior words from the "true" translation provided, the y_hats of the
-    model are never auto-regressively fed into the model.
-
-    Unlike the other evaluation metrics, this one requires the model as an input.
-
-    Parameters
-    ----------
-    model : NMT
-        A NMT model instance to be evaluated.
-    eval_data : List[Tuple[List[str]]]
-        A list of (src_sentence, tgt_sentence) tuples containing source and target sentences stored
-        as lists of word-tokens.
-    batch_size : int, optional
-        The batch size to use when iterating over eval_data. The default is 32.
-
-    Returns
-    -------
-    ppl : float
-        A perplexity score of the model evaluated over the eval_data.
-    """
-    was_training = model.training # Check if the model was previously in training mode, save for later
-    model.eval() # Switch the model to evaluation mode, do not track gradients
-
-    cuml_loss = 0.0 # Track the cumulative loss over all the eval_data the model is evaluated on
-    cuml_tgt_words = 0.0 # Track how many total target language output words were in the eval_data
-
-    with torch.no_grad():  # no_grad() signals backend to throw away all gradients
-        for src_sentences, tgt_sentences in util.batch_iter(eval_data, batch_size, shuffle=True):
-            loss = model(src_sentences, tgt_sentences, eps=0).sum() # Compute the forward function i.e. the
-            # negative log-likelihood of the output target words according to the model without any smoothing
-            cuml_loss += loss.item() # Accumulate the loss
-            tgt_word_num_to_predict = sum(len(s[1:]) for s in tgt_sentences)  # omitting leading `<s>`
-            cuml_tgt_words += tgt_word_num_to_predict # Count tgt words that are in this batch of eval_data
-
-        ppl = np.exp(cuml_loss / cuml_tgt_words) # Compute the preplexity score of the model
-
-    if was_training: # If the model was training, then set it back to that config before exiting
-        model.train()
-
-    return ppl
-
 
 def setup_device(try_gpu: bool = True):
     """
