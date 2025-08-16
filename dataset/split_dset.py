@@ -1,19 +1,14 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-This script reads in the parallel sentence data set from csv stored in the dataset/paired_csv directory and
-splits it into separate csv files (train, validation, test) for English (eng) and Deutsch (deu) respectively.
-Because the training data set is so large, it is also split into 3 equal sized subsets. A debug train subset
-is also saved which is small and useful for testing.
+This script reads in the parallel sentence data sets from csv stored in the dataset/paired_csv directory and
+splits them into separate csv files (train, validation, test) for English (eng) and Deutsch (deu)
+respectively. Because the training data set is so large, it is also split into 3 equal sized subsets. A debug
+train subset is also saved which is small and useful for testing and contains 3000 randomly sampled sentence
+pairs from the broader train data set.
 
 This data set was download from: https://www.kaggle.com/datasets/mohamedlotfy50/wmt-2014-english-german
-
-The German word list was downloaded from:
-    https://gist.github.com/MarvinJWendt/2f4f4154b8ae218600eb091a5706b5f4
-
-The English word list was downloaded from:
-    https://gist.github.com/h3xx/1976236
-    https://raw.githubusercontent.com/arstgit/high-frequency-vocabulary/refs/heads/master/30k.txt
+and should be saved into the dataset\paired_csv\ directory before running this script.
 """
 
 import pandas as pd
@@ -42,7 +37,7 @@ def pct_words_recognized(sentence: str, word_set: set) -> float:
         A float value [0, 1] denoting what percentage of the input sentence words were located in word_set.
     """
     # Remove punctuation, replace wiht a space, then split on white spaces to create a list of words
-    words = sentence.translate(str.maketrans(string.punctuation, ' '*len(string.punctuation))).split()
+    words = sentence.translate(str.maketrans(string.punctuation, ' ' * len(string.punctuation))).split()
     if len(words) > 0:
         return sum([1 for w in words if w.lower() in word_set]) / len(words)
     else:
@@ -61,10 +56,14 @@ if __name__ == "__main__":
     deu_words = pd.read_csv(os.path.join(BASE_PATH, "lang_word_lists/german_words.txt")).iloc[:, 0]
     deu_words = set(deu_words.str.lower())
 
+    os.makedirs(os.path.join(BASE_PATH, "deu"), exist_ok=True) # Ensure this folder exists, create if needed
+    os.makedirs(os.path.join(BASE_PATH, "eng"), exist_ok=True) # Ensure this folder exists, create if needed
+
     for file_name in os.listdir(os.path.join(BASE_PATH, "paired_csv")):
         print(f"\nProcessing {file_name}")
         new_file_name = file_name.split("_")[-1]
-        data = pd.read_csv(os.path.join(os.path.join(BASE_PATH, "paired_csv"), file_name), engine='python')
+        data = pd.read_csv(os.path.join(os.path.join(BASE_PATH, "paired_csv"), file_name), engine="python",
+                           encoding="utf-8")
         n_rows = data.shape[0] # Record how many sentence pairs there were originally
         data.dropna(inplace=True) # If there are NaNs, drop those entries
         data.drop_duplicates(inplace=True) # Drop duplicates if any
@@ -125,6 +124,13 @@ if __name__ == "__main__":
 #############################
 ### Outputs from last run ###
 #############################
+
+# Processing most-common.csv
+# 0 rows dropped due to duplicates and NaNs
+# Dropping 0 rows due to word count limit
+# Dropping 0 rows due to string len limit
+# 0 rows dropped, data.shape = (1324, 2)
+# most-common.csv processed and split into most-common.csv
 
 # Processing wmt14_translate_de-en_test.csv
 # 0 rows dropped due to duplicates and NaNs

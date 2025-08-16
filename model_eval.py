@@ -10,12 +10,14 @@ from typing import List, Tuple, Dict, Union, Optional
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
-from models.util import Hypothesis, NMT
+from models.util import NMT
 import torch, os
 import util
 from tqdm import tqdm
 from termcolor import colored as c
 import time
+
+BASE_PATH = os.path.abspath(os.path.dirname(__file__))
 
 ############################################
 ### Automatic Model Evaluation Functions ###
@@ -393,6 +395,8 @@ def compute_corpus_bleurt_score(mt_df: pd.DataFrame) -> float:
     BLEURT scores trypically range from -1 to +1 with higher scores being preferred. Scores of 0.7 or greater
     generally reflect strong translation quality.
 
+    Use: pip install git+https://github.com/google-research/bleurt.git to install this repo.
+
     Parameters
     ----------
     mt_df : pd.DataFrame
@@ -736,6 +740,7 @@ if __name__ == "__main__":
     print(f"Running model evaluation for {model_classes} using dataset={data_set_name}")
     start_time = time.time()
     summary_table = generate_model_summary_table(model_classes, build_eval_dataset(data_set_name))
+    os.makedirs(os.path.join(BASE_PATH, "eval_tables"), exist_ok=True) # Ensure this folder exists
     summary_table.to_csv(f"eval_tables/{data_set_name}_eval.csv")  # Save the computed results
     print(f"\nSummary Table for Dataset={data_set_name}")
     print(summary_table)

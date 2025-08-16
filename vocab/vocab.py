@@ -72,6 +72,7 @@ def train_subword_tokenizer(file_path: str, language_abbv: str, vocab_size: int)
     sp_list : List[List[str]]
         A list of unique sub-word tokens derived from the corpus used for creating a vocab.
     """
+    os.makedirs(os.path.join(BASE_PATH, language_abbv), exist_ok=True) # Ensure this folder exists
     # Fit a tokenizer to the training data, create a set of sub-word tokens for this language
     spm.SentencePieceTrainer.train(input=file_path,
                                    model_prefix=os.path.join(BASE_PATH, language_abbv, language_abbv),
