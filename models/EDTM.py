@@ -1116,12 +1116,6 @@ class EDTM(NMT):
             mt = [[util.tokens_to_str(x[0]), x[1]] for x in mt] # Convert each to a string sentence
         return mt
 
-    def beam_search():
-        # TODO: Finish building out a beam-search method here -> Try doing this first before copying the
-        # greedy search stuff
-        # ADD HERE, could probably combine with the above maybe? Should I do that?
-        pass
-
     def save(self, model_path: str, verbose: bool = False) -> None:
         """
         Method for saving the model to disk.
