@@ -169,9 +169,9 @@ def tokens_to_str(tokenized_sentence: List[str]) -> str:
         A plain text sentence derived from the sub-word tokens.
     """
     tokenized_sentence = tokenized_sentence.copy() # Copy to avoid mutation
-    if tokenized_sentence[-1] == "</s>": # Remove the start token if present
+    if len(tokenized_sentence) > 0 and tokenized_sentence[-1] == "</s>": # Remove the start token if present
         tokenized_sentence.pop()
-    if tokenized_sentence[0] == "<s>": # Remove the end token if present
+    if len(tokenized_sentence) > 0 and tokenized_sentence[0] == "<s>": # Remove the end token if present
         tokenized_sentence.pop(0)
     return ''.join(tokenized_sentence).replace('▁', ' ').strip()
 

@@ -11,12 +11,12 @@ import torch.nn.utils
 import torch.nn.functional as F
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from models.util import NMT, Hypothesis
+from models.util import NMT
 from vocab.vocab import Vocab
 import util
 
 
-class Google_API(nn.Module):
+class Google_API(NMT):
     """
     This model class returns translations made using the Google Translate API. No translations are actually
     done on-the-fly, rather this class reads in a set of pre-cached data that was translated using the Google
@@ -63,7 +63,7 @@ class Google_API(nn.Module):
         """
         return torch.zeros(len(source))
 
-    def greedy_search(self, src_sentences: Union[List[str], List[List[str]]], tokenized: bool = True,
+    def translate(self, src_sentences: Union[List[str], List[List[str]]], tokenized: bool = True,
                       *args, **kwargs) -> List[List[Union[Union[str, List[str]], float]]]:
         """
         Given a list of source sentences (src_sentences) this method returns the pre-cached translations

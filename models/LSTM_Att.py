@@ -11,7 +11,7 @@ import torch.nn.functional as F
 from torch.nn.utils.rnn import pad_packed_sequence, pack_padded_sequence
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from models.util import NMT, Hypothesis
+from models.util import NMT
 from vocab.vocab import Vocab
 import util
 
@@ -423,9 +423,10 @@ class LSTM_Att(NMT):
         # Returns the updated decoder state, the O_t combined outputs and the attention scores e_t
         return dec_state, O_t, e_t
 
-    def greedy_search(self, src_sentences: Union[List[str], List[List[str]]], k_pct: float = 0.1,
+    def translate(self, src_sentences: Union[List[str], List[List[str]]], k_pct: float = 0.1,
                       max_decode_lengths: Union[List[int], int] = None,
                       tokenized: bool = True) -> List[List[Union[Union[str, List[str]], float]]]:
+        ## TODO: Add beam search and update below
         """
         Given a list of source sentences (either a list of strings or a list of sub-word tokens), this method
         performs greedy search yielding a translation in the target langauge by sequentially predicting the
@@ -458,7 +459,7 @@ class LSTM_Att(NMT):
             e.g. ["Wo ist due bank?", ...]
             Or a list of input source sentences where each is a list of sub-word tokens if tokenize is False
             e.g. [['▁Wo', '▁ist', '▁die', '▁Bank', '?'], ...]
-        k_pct: float
+        k_pct : float
             This method builds an output transltion by sampling among the eligible candidate sub-word tokens
             according to their relative model-assigned probabilities at each time step. If k_pct is set to
             None, then the most likely word is always choosen (100% greedy). Otherwise, the most probably

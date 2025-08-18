@@ -499,10 +499,10 @@ def build_eval_dataset(data_set_name: str) -> Dict[str, List[Tuple[List[str]]]]:
     return eval_data_dict
 
 
-def generate_mt_df(model: NMT, eval_data: List[Tuple[List[str]]]) -> pd.DataFrame:
+def generate_mt_df(model: NMT, eval_data: List[Tuple[List[str]]], kwargs: dict = None) -> pd.DataFrame:
     """
     Generates a machine translation dataframe for a given model, passes each input source sentence through
-    the model's greedy_search method to generate output machine translations (mt).
+    the model's translate method to generate output machine translations (mt).
 
     The output dataframe records:
         1). the source sentence
@@ -516,16 +516,15 @@ def generate_mt_df(model: NMT, eval_data: List[Tuple[List[str]]]) -> pd.DataFram
     eval_data : List[Tuple[List[str]]]
         A list of (src_sentence, tgt_sentence) tuples containing source and target sentences stored as lists
         of word-tokens.
-    src_lang : str
-        The language of the source sentences (e.g. "eng" or "deu").
-    tgt_lang : str
-        The language of the target sentences (e.g. "eng" or "deu").
+    kwargs : dict
+        A dictionary of kwargs passed to model.translate governing how the machine translations are generated.
 
     Returns
     -------
     pd.DataFrame
         Returns a DataFrame with columns ["src", "tgt", "mt"] for each input sentence pair.
     """
+    kwargs = {} if kwargs is None else kwargs
     # Record the outputs for each translation i.e. the source sentence (src), the target sentence (tgt) i.e.
     # the translation provided in the data set and the model translation (machine translation = mt)
     chunks = [] # Create DataFrame chuncks that will be concatenated at the end
@@ -534,7 +533,7 @@ def generate_mt_df(model: NMT, eval_data: List[Tuple[List[str]]]) -> pd.DataFram
         chunk["src"] = [util.tokens_to_str(s) for s in src_sents] # Record the input source sentences
         chunk["tgt"] = [util.tokens_to_str(s) for s in tgt_sents] # Record the output target sentences
         # Run the input source sentences through the model and generate machine translations
-        mt = model.greedy_search(src_sents, tokenized=True) # eval_data containes pre-tokenized sentences
+        mt = model.translate(src_sents, tokenized=True, **kwargs) # eval_data has pre-tokenized sentences
         chunk["mt"] = [util.tokens_to_str(x[0]) for x in mt] # Record the decoded sentences
         chunks.append(chunk) # Add to the list of dataframe chuncks, one for each batch
     return pd.concat(chunks)  # Concatenate all the df chunks together and return
@@ -586,7 +585,7 @@ def generate_model_eval_summary(model: NMT, eval_data: List[Tuple[List[str]]]) -
         A pd.Series of evaluation metric values.
     """
     # Compute mt_df for this model and use it throughout for various eval metric calculations
-    mt_df = generate_mt_df(model, eval_data)
+    mt_df = generate_mt_df(model, eval_data) # TODO: Update this, if eval_data is none, look for cached data instead
 
     eval_summary = pd.Series(dtype=float)  # Record in a pd.Series
     if model.name == "Google_API":
@@ -616,7 +615,7 @@ def generate_model_summary_table(model_classes: List[str],
     Parameters
     ----------
     model_classes : List[str]
-        A list of model class names e.g. ['Fwd_RNN_3', 'LSTM_Att', 'LSTM_AttNN'].
+        A list of model class names e.g. ['Fwd_RNN', 'LSTM_Att', 'EDTM', "Google_API"].
     eval_data_dict : Dict[str, List[str]]
         A dictionary containing the dataset to be used for automatic model evaluation. The keys of the dict
         should be "EngDeu" and "DeuEng" for the 2 directions of translation and the values should be a list
@@ -735,6 +734,7 @@ if __name__ == "__main__":
     data_set_name = args.data_set_name
 
     model_classes = ['Fwd_RNN', 'LSTM_Att', 'EDTM', 'Google_API'] # All the models to evaluate
+    # model_classes = ['Google_API']
 
     # Generate evaluation tables for the data set i.e. one of ["train_debug", "validation", "test"]
     print(f"Running model evaluation for {model_classes} using dataset={data_set_name}")

@@ -3,7 +3,7 @@
 ### Package imports
 import os, sys
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname( __file__ ), '..')))
-from util import read_corpus
+from util import read_corpus, tokens_to_str, tokenize_sentences
 from google.cloud import translate_v2 as translate
 from typing import List
 import math
@@ -95,6 +95,14 @@ def translate_corpus(dataset_name: str, save_dir: str = "google_api") -> None:
 
     # Translate the English sentences into German using Google Translate
     output_df["deu_google"] = google_translate(eng_sentences, src_lang="eng", tgt_lang="deu")
+
+    # Run these sentences through the tokenizer to ensure that they can be tokenized and de-tokenized
+    # consistently as will be required later down the line in model_eval
+    x = tokenize_sentences(list(output_df["eng_google"].values), lang="eng", is_tgt=False)
+    output_df["eng_google"] = [tokens_to_str(sentence) for sentence in x]
+
+    x = tokenize_sentences(list(output_df["deu_google"].values), lang="deu", is_tgt=False)
+    output_df["deu_google"] = [tokens_to_str(sentence) for sentence in x]
 
     # Save the resulting dataframe to disk
     save_dir = f"{os.path.join(save_dir, f'{dataset_name}.csv')}"
