@@ -3,7 +3,7 @@
 Imports all models into 1 module for quick access and reference.
 """
 import os, sys
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__ ), '..')))
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 import util
 
 # Whenever we add another model to the library, add it here

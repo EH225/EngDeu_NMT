@@ -534,7 +534,7 @@ def generate_mt_df(model: NMT, eval_data: List[Tuple[List[str]]]) -> pd.DataFram
         chunk["src"] = [util.tokens_to_str(s) for s in src_sents] # Record the input source sentences
         chunk["tgt"] = [util.tokens_to_str(s) for s in tgt_sents] # Record the output target sentences
         # Run the input source sentences through the model and generate machine translations
-        mt = model.greedy_search(src_sents)
+        mt = model.greedy_search(src_sents, tokenized=True) # eval_data containes pre-tokenized sentences
         chunk["mt"] = [util.tokens_to_str(x[0]) for x in mt] # Record the decoded sentences
         chunks.append(chunk) # Add to the list of dataframe chuncks, one for each batch
     return pd.concat(chunks)  # Concatenate all the df chunks together and return
@@ -696,7 +696,7 @@ def run_qualitative_analysis(model_class: str, src_lang: str, tgt_lang: str) -> 
     """
     # Construct a qualitative assessment data set
     deu_sentences = ['Wo ist die Bank?', 'Was hast du gesagt?', 'Guten Tag.', 'Ich bin neunzehn Jahre alt.',
-                     "Bist du ein Doktor?", "Wie geht's es dir?", "Wie viel Uhr ist es?",
+                     "Sind Sie Arzt?", "Wie geht's es dir?", "Wie viel Uhr ist es?",
                      "Wie kann ich Ihnen helfen?", "Was hast du am Wochenende gemacht?"]
 
     eng_sentences = ["Where is the bank?", "What did you say?", "Good day.", "I am nineteen years old.",

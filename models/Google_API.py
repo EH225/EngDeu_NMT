@@ -63,32 +63,58 @@ class Google_API(nn.Module):
         """
         return torch.zeros(len(source))
 
-    def greedy_search(self, src_sentences: List[List[str]], *args,
-                      **kwargs) -> List[List[Union[List[str], int]]]:
+    def greedy_search(self, src_sentences: Union[List[str], List[List[str]]], tokenized: bool = True,
+                      *args, **kwargs) -> List[List[Union[Union[str, List[str]], float]]]:
         """
         Given a list of source sentences (src_sentences) this method returns the pre-cached translations
         from Google if they exist, otherwise a blank string is returned if the input sentence is not cached.
 
+        Set tokenized = False if src_sentences is passed as a list of sentence strings or True if they have
+        already been tokenized into list of sub-word tokens. The returned output will match the input i.e.
+        lists of sub-word tokens will be returned if tokenized = True.
+
         Parameters
         ----------
-        src_sentences : List[List[str]]
-            A list of input source sentences where each is a list of sub-word tokens.
-            e.g. ['▁Wo', '▁ist', '▁die', '▁Bank', '?']
+        src_sentences : Union[List[str], List[List[str]]]
+            A list of input source sentences stored as strings (if tokenize is True)
+            e.g. ["Wo ist due bank?", ...]
+            Or a list of input source sentences where each is a list of sub-word tokens if tokenize is False
+            e.g. [['▁Wo', '▁ist', '▁die', '▁Bank', '?'], ...]
+        tokenized : bool, optional
+            Denotes whether src_sentences has already been tokenized.
+
+            If False, then src_sentences is assumed to be a list of sentences stored as strings which will be
+            tokenized internally before being fed into the model. If False, then the output list of machine
+            translations for each input sentence will also be sentences stored as strings.
+            E.g. [['Where is the Bank?', 0.9648], ...]
+
+            If True, the src_sentences is assumed to be a list of sub-word token lists which can be fed into
+            the model directly. If True, then the output list of machien translations for each input sentence
+            will be a list of sub-word tokens similar to the way src_sentences was input.
+            E.g. [[['<s>', '▁Where', '▁is', '▁the', '▁Bank', '?', '</s>'], 0.9648], ...]
 
         Returns
         -------
-        List[List[Union[List[str], int]]]
-            Returns a list of hypotheses i.e. a length 2 lists each containing:
-                - A list of sub-word tokens predicted as the translation of the ith input sentence
-                - A negative log-likelihood score of the decoding
+        List[List[Union[Union[str, List[str]], float]]]
+            Returns a list of hypotheses i.e. length 2 lists each containing:
+                - The predicted translation from the model as either a string (if tokenize is True) or a
+                  list of sub-word tokens (if tokenize is False).
+                - A negative log-likelihood score of the decoding as a float
         """
         b = len(src_sentences) # Record how many input sentences there are i.e. the batch size
         assert b > 0, "len(src_sentences) must be >= 1"
-        if isinstance(src_sentences[0], str): # If 1 sentence is passed in, then add an outer list wrapper
+        if tokenized is True and isinstance(src_sentences[0], str):
+            # If 1 sentence of word-tokens is passed in, then add an outer list wrapper
             src_sentences = [src_sentences] # Make src_sentences a list of lists
             b = len(src_sentences) # Redefine to be 1
 
-        # src_sentences comes in pre-tokenized, remove the tokenization and attempt to locate in the lookup
-        # cache of pre-translated sentences, return a list for each which is length 1
-        return [[[self.cache_dict.get(util.tokens_to_str(s), "")], 0] for s in src_sentences]
+        if tokenized is True: # Tokenization not needed, src_sentences are already tokenized
+            # src_sentences comes in pre-tokenized, remove the tokenization and attempt to locate in the
+            # lookup cache of pre-translated sentences, return a list for each which is length 1
+            mt = [self.cache_dict.get(util.tokens_to_str(s), "") for s in src_sentences] # Look up
+            mt = util.tokenize_sentences(mt, self.lang_pair[0], is_tgt=False) # Tokenize
+            mt = [[token_list, 0] for token_list in mt] # Re-format as a list of lists
+        else: # If the sentences are not tokenized, then use them directly in the look up
+            mt = [[self.cache_dict.get(s, ""), 0] for s in src_sentences]
 
+        return mt

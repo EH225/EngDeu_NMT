@@ -15,6 +15,7 @@ import math, logging
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from models.util import NMT
 from vocab.vocab import Vocab
+import util
 
 logger = logging.getLogger(__name__)
 
@@ -929,15 +930,16 @@ class EDTM(NMT):
         for block in self.decoder:
             block.clear_KV_cache()
 
-    def greedy_search(self, src_sentences: List[List[str]], k_pct: float = 0.1,
-                      max_decode_lengths: Union[List[int], int] = None) -> List[List[Union[List[str], int]]]:
+    def greedy_search(self, src_sentences: Union[List[str], List[List[str]]], k_pct: float = 0.1,
+                      max_decode_lengths: Union[List[int], int] = None,
+                      tokenized: bool = True) -> List[List[Union[Union[str, List[str]], float]]]:
         """
-        Given a list of source sentences (where each is a list of sub-word tokens), this method performs
-        greedy search yielding a translation in the target langauge by sequentially predicting the next token
-        by randomly sampling among the sub-words that make up the top k% of the probability distribution
-        among all possiable output sub-word tokens, according to their relative probabilities. src_sentences
-        is processed in batches to speed up calculations, but this computation can be slow for large sets of
-        input source sentences.
+        Given a list of source sentences (either a list of strings or a list of sub-word tokens), this method
+        performs greedy search yielding a translation in the target langauge by sequentially predicting the
+        next token by randomly sampling among the sub-words that make up the top k% of the probability
+        distribution among all possiable output sub-word tokens, according to their relative probabilities.
+        src_sentences is processed in batches to speed up calculations, but this computation can be slow for
+        large sets of input source sentences.
 
         If k_pct is let as None, then the most probable sub-word token is always choosen and the output has no
         variation from one call to another. By default, k_pct is set to 10% which means that the model will
@@ -952,11 +954,17 @@ class EDTM(NMT):
         value will be len(src_sentence) * 1.2 for each src_sentence in src_sentences. The values of
         max_decode_lengths are capped at 200 globally.
 
+        Set tokenized = False if src_sentences is passed as a list of sentence strings or True if they have
+        already been tokenized into list of sub-word tokens. The returned output will match the input i.e.
+        lists of sub-word tokens will be returned if tokenized = True.
+
         Parameters
         ----------
-        src_sentences : List[List[str]]
-            A list of input source sentences where each is a list of sub-word tokens.
-            e.g. ['▁Wo', '▁ist', '▁die', '▁Bank', '?']
+        src_sentences : Union[List[str], List[List[str]]]
+            A list of input source sentences stored as strings (if tokenize is True)
+            e.g. ["Wo ist due bank?", ...]
+            Or a list of input source sentences where each is a list of sub-word tokens if tokenize is False
+            e.g. [['▁Wo', '▁ist', '▁die', '▁Bank', '?'], ...]
         k_pct: float
             This method builds an output transltion by sampling among the eligible candidate sub-word tokens
             according to their relative model-assigned probabilities at each time step. If k_pct is set to
@@ -968,17 +976,32 @@ class EDTM(NMT):
             output machine translation produced for each sentence will be capped in length to a certain
             amount of sub-word tokens specified here. The default is 1.2 * len(src_sentence) and all values
             must be <= 250.
+        tokenized : bool, optional
+            Denotes whether src_sentences has already been tokenized.
+
+            If False, then src_sentences is assumed to be a list of sentences stored as strings which will be
+            tokenized internally before being fed into the model. If False, then the output list of machine
+            translations for each input sentence will also be sentences stored as strings.
+            E.g. [['Where is the Bank?', 0.9648], ...]
+
+            If True, the src_sentences is assumed to be a list of sub-word token lists which can be fed into
+            the model directly. If True, then the output list of machien translations for each input sentence
+            will be a list of sub-word tokens similar to the way src_sentences was input.
+            E.g. [[['<s>', '▁Where', '▁is', '▁the', '▁Bank', '?', '</s>'], 0.9648], ...]
 
         Returns
         -------
-        List[List[Union[List[str], int]]]
-            Returns a list of hypotheses i.e. a length 2 lists each containing:
-                - A list of sub-word tokens predicted as the translation of the ith input sentence
-                - A negative log-likelihood score of the decoding
+        List[List[Union[Union[str, List[str]], float]]]
+            Returns a list of hypotheses i.e. length 2 lists each containing:
+                - The predicted translation from the model as either a string (if tokenize is True) or a
+                  list of sub-word tokens (if tokenize is False).
+                - A negative log-likelihood score of the decoding as a float
         """
         b = len(src_sentences) # Record how many input sentences there are i.e. the batch size
         assert b > 0, "len(src_sentences) must be >= 1"
-        if isinstance(src_sentences[0], str): # If 1 sentence is passed in, then add an outer list wrapper
+        if tokenized is False:  # Convert the input sentences from strings to lists of subword strings
+            src_sentences = util.tokenize_sentences(src_sentences, self.lang_pair[0], is_tgt=False)
+        elif isinstance(src_sentences[0], str): # If 1 sentence is passed in, then add an outer list wrapper
             src_sentences = [src_sentences] # Make src_sentences a list of lists
             b = len(src_sentences) # Redefine to be 1
         if k_pct is not None:  # If not None, then perform data-validation
@@ -1089,10 +1112,14 @@ class EDTM(NMT):
 
         self.clear_decoder_KV_cache() # Clear the key-value caches again after we're done to clean up
 
+        if tokenized is False:  # Convert the outputs into concatenated sentences to match the input format
+            mt = [[util.tokens_to_str(x[0]), x[1]] for x in mt] # Convert each to a string sentence
         return mt
 
     def beam_search():
-        # TODO: Finish building out a beam-search method here
+        # TODO: Finish building out a beam-search method here -> Try doing this first before copying the
+        # greedy search stuff
+        # ADD HERE, could probably combine with the above maybe? Should I do that?
         pass
 
     def save(self, model_path: str, verbose: bool = False) -> None:
@@ -1129,8 +1156,8 @@ class EDTM(NMT):
 
         Returns
         -------
-        MHTM
-            Returns a object instance of this model class with the weights saved to disk.
+        model : EDTM
+            Returns an object instance of this model class with the weights saved to disk.
         """
         params = torch.load(model_path, map_location=lambda storage, loc: storage, weights_only=False)
         model = cls(vocab=params['vocab'], **params['args'])
