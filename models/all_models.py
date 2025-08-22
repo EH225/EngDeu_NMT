@@ -13,6 +13,7 @@ from models.LSTM_AttNN import LSTM_AttNN
 from models.Google_API import Google_API
 from models.EDTM import EDTM
 
+MODELS = ["Fwd_RNN", "LSTM_Att", "Google_API", "EDTM"] # List the models to be used from this module
 
 def load_model(model_class: str, src_lang: str, tgt_lang: str):
     """
