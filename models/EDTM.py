@@ -1002,7 +1002,7 @@ class EDTM(NMT):
         Returns a list of hypotheses i.e. length 2 lists each containing:
             - The predicted translation from the model as either a string (if tokenize is True) or a
               list of sub-word tokens (if tokenize is False).
-            - The negative log-likelihood score of the decoding as a float
+            -  negative log-likelihood score of the decoding as a float
         """
         b = len(src_sentences) # Record how many input sentences there are i.e. the batch size
         assert b > 0, "len(src_sentences) must be >= 1"
@@ -1052,7 +1052,7 @@ class EDTM(NMT):
             if beam_size == 1: # Proceed with greedy search
                 mt = self._greedy_search(enc_hiddens, enc_masks, k_pct, max_decode_lengths)
             else: # Otherwise, utilize beam search to generate output translations
-                mt = [self._beam_search(beam_size, enc_hiddens[i,:,:], enc_masks[i, :], max_decode_lengths[i])
+                mt = [self._beam_search(enc_hiddens[i,:,:], enc_masks[i, :], beam_size, max_decode_lengths[i])
                       for i, src_s in enumerate(src_sentences)]
 
         if tokenized is False:  # Convert the outputs into concatenated sentences to match the input format
@@ -1161,7 +1161,7 @@ class EDTM(NMT):
         self.clear_decoder_KV_cache() # Clear the key-value caches again after we're done to clean up
         return mt
 
-    def _beam_search(self, beam_size: int, enc_hiddens: torch.Tensor, enc_masks: torch.Tensor,
+    def _beam_search(self, enc_hiddens: torch.Tensor, enc_masks: torch.Tensor, beam_size: int,
                      max_decode_length: int, alpha: float = 0.8) -> List[Union[List[str], float]]:
         """
         This method performs beam search on the input source sentence provided (enc_hiddens) using a given
@@ -1169,14 +1169,14 @@ class EDTM(NMT):
 
         Parameters
         ----------
-        beam_size : int
-            An integer [1, 5] denoting the beam size i.e. how many hypotheses to track during decoding.
         enc_hiddens : torch.Tensor
             A tensor of size (src_len, embed_size) corresponding to this input src_sentence after it has been
             passed through the encoder.
         enc_masks : torch.Tensor
             A tensor of size (src_len, ) corresponding to this input src_sentence which identify where the
             padding tokens are.
+        beam_size : int
+            An integer [1, 5] denoting the beam size i.e. how many hypotheses to track during decoding.
         max_decode_length : int
             An integer denoting the max output decode length for the returned translation.
         alpha : float, optional
