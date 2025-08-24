@@ -370,9 +370,6 @@ class Fwd_RNN(NMT):
               list of sub-word tokens (if tokenize is False).
             -  negative log-likelihood score of the decoding as a float
         """
-        print("self.device", self.device)
-
-
         b = len(src_sentences) # Record how many input sentences there are i.e. the batch size
         assert b > 0, "len(src_sentences) must be >= 1"
         if tokenized is False:  # Convert the input sentences from strings to lists of subword strings
@@ -407,7 +404,6 @@ class Fwd_RNN(NMT):
 
             # Convert the input source sentence into a tensor object of size (b, src_len) of word indices
             src_sentence_tensor = self.vocab.src.to_input_tensor(src_sentences, self.device) # (b, src_len)
-            print("src_sentence_tensor.device", src_sentence_tensor.device)
 
             # Pass it through the encoder to generate the encoder hidden states for each word of each input
             # sentence and also the the decoder initial hidden state (h of t minus 1) for each sentence
@@ -473,8 +469,6 @@ class Fwd_RNN(NMT):
         while finished < b: # Iterate until all output translations are finished generating
             Y_t_embed = self.target_embeddings(Y_t) # (b, embed_size) convert to a word vector
 
-            print("Y_t_embed.device", Y_t_embed.device)
-
             # Compute an updated hidden state using the last y_hat and the prior hidden state
             dec_state = self.step(Y_t_embed, dec_state)
             # dec_state is a tensor with shape (batch_size, layers, hidden_size)
@@ -483,7 +477,6 @@ class Fwd_RNN(NMT):
             # layer i.e. the one that is to be fed to self.target_vocab_projection, gives us (b, |V|)
             # Feed in the hidden state of the top layer for each sentence:
             log_p_t = F.log_softmax(self.target_vocab_projection(dec_state[:, -1, :]), dim=-1) # (b, |V|)
-            print("log_p_t.device", log_p_t.device)
 
             if k_pct is None: # Select the word with the highest modeled probability always
                 # Find which word has the highest log prob for each sentence, idx = word_id in the vocab
