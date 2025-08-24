@@ -6,17 +6,27 @@ reducing the computational load of the model_eval module i.e. it will be able to
 predictions instead of having to generate them on-the-fly.
 """
 import os, sys
+import argparse
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 import util
 from models import all_models
 import model_eval
 
 if __name__ == "__main__":
+    # Example usage:  python models/cache_predictions.py --debug=False --beam-search=True
+    parser = argparse.ArgumentParser(description='Run model prediction caching')
+    parser.add_argument('--debug', type=str, help='Set to True for running in debug testing mode',
+                        default="True")
+    parser.add_argument('--beam-search', type=str, help='Set to True to run using beam search',
+                        default="True")
+    args = parser.parse_args()
+    debug = args.debug.lower() == "true"
+    beam_search = args.beam_search.lower() == "true"
 
-    kwargs = {"beam_size": 5} # Cache beam-search predictions from the models
+    data_set_names = ["train_tiny"] if debug is True else ["train_debug", "validation", "test"]
+    kwargs = {"beam_size": 5} if beam_search is True else {"beam_size": 1, "k_pct": 0.1}
 
-    ## TODO: Edit the data_set_name list below when we roll out beam search to all models and want to run in prod
-    for data_set_name in ["train_tiny"]: # ["train_debug", "validation", "test"]: # Generate predictions for all data sets
+    for data_set_name in data_set_names: # Generate predictions for all data sets
         eval_data_dict = model_eval.build_eval_dataset(data_set_name)
         for model_class in all_models.MODELS: # Generate predictions for all models
             for (src_lang, tgt_lang) in [("deu", "eng"), ("eng", "deu")]:

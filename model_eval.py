@@ -3,21 +3,23 @@
 This module contains helper functions for model evaluation e.g. functions to compute model perplexity, BLEU
 scores, METEOR, BERTscores etc. and also model summary comparison tables.
 """
-
+import os, sys
+BASE_PATH = os.path.abspath(os.path.dirname(__file__))
+sys.path.insert(0, BASE_PATH)  # This module exists at the root dir of the project, add that to the path
 import models.all_models as all_models
+from models.util import NMT
+import util
+
 import sentencepiece as spm
 from typing import List, Tuple, Dict, Union, Optional
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
-from models.util import NMT
 import torch, os
-import util
+
 from tqdm import tqdm
 from termcolor import colored as c
 import time
-
-BASE_PATH = os.path.abspath(os.path.dirname(__file__))
 
 ############################################
 ### Automatic Model Evaluation Functions ###
@@ -496,6 +498,8 @@ def build_eval_dataset(data_set_name: str) -> Dict[str, List[Tuple[List[str]]]]:
     tgt_data = util.read_corpus("eng", data_set_name, is_tgt=True)
     eval_data_dict["DeuEng"] = list(zip(src_data, tgt_data))
 
+    eval_data_dict["data_set_name"] = data_set_name # Add identifying name to data set eval dict
+
     return eval_data_dict
 
 
@@ -557,10 +561,14 @@ def print_qualitative_comparison(mt_df: pd.DataFrame) -> None:
         print(f"{c('Model Output', 'magenta')}: {row['mt']}")
 
 
-def generate_model_eval_summary(model: NMT, eval_data: List[Tuple[List[str]]]) -> pd.Series:
+def generate_model_eval_summary(model: NMT, eval_data: List[Tuple[List[str]]],
+                                cached_dset_name: str = None) -> pd.Series:
     """
     This function generates an evaluation summary (a pd.Series of values) for a passed model on a given
-    evaluation data set (eval_data). Evaluation metrics include:
+    evaluation data set (eval_data). Note, each model instance only makes predictions for one language pair
+    and hence this function returns performance metrics for only one language pair e.g. EngDeu or DeuEng.
+
+    Evaluation metrics include:
         - Perplexity
         - Bi-Lingual Evaluation Understudy (BLEU)
         - National Institute of Standards and Technology (NIST)
@@ -576,8 +584,14 @@ def generate_model_eval_summary(model: NMT, eval_data: List[Tuple[List[str]]]) -
     model : NMT
         A NMT model instance to evaluate.
     eval_data : List[Tuple[List[str]]]
-        A list of (src_sentence, tgt_sentence) tuples containing source and target sentences stored as lists
-        of word-tokens.
+        A list of parallel sentence tuples (src_sentence, tgt_sentence) where each sentence is recorded as a
+        list of sub-word tokens.
+    cached_dset_name : str, optional
+        If not None, then a data set name should be provided and will be used to read in cached model
+        predictions and target comparsions from cache instead of using eval_data. If left as None or the
+        cached predictions cannot be loaded, then new model predictions will be computed on-the-fly.
+        A cached mt_df will be attempted to be read in from:
+            model_pred/{model.lang_pair}/{model.name}/{cached_dset_name}.csv
 
     Returns
     -------
@@ -585,7 +599,15 @@ def generate_model_eval_summary(model: NMT, eval_data: List[Tuple[List[str]]]) -
         A pd.Series of evaluation metric values.
     """
     # Compute mt_df for this model and use it throughout for various eval metric calculations
-    mt_df = generate_mt_df(model, eval_data) # TODO: Update this, if eval_data is none, look for cached data instead
+    lang_pair = model.lang_pair[0].capitalize() + model.lang_pair[1].capitalize()
+    mt_df = None
+    if cached_dset_name is not None:  # Attempt to read in mt_df from the cached location
+        try: # Try reading in the CSV file containing the mt_df for this data set
+            mt_df = pd.read_csv(f"model_pred/{lang_pair}/{model.name}/{cached_dset_name}.csv")
+        except: # Report if it cannot be done, mt_df remains None
+            print(f"Cached mt_df for {model.name} {lang_pair} {cached_dset_name} could not be read")
+    if mt_df is None:  # If unable to be read from cache or read_cache_pred is None, compute now on-the-fly
+        mt_df = generate_mt_df(model, eval_data)
 
     eval_summary = pd.Series(dtype=float)  # Record in a pd.Series
     if model.name == "Google_API":
@@ -603,30 +625,32 @@ def generate_model_eval_summary(model: NMT, eval_data: List[Tuple[List[str]]]) -
     return eval_summary
 
 
-def generate_model_summary_table(model_classes: List[str],
-                                 eval_data_dict: Dict[str, List[Tuple[List[str]]]]) -> pd.DataFrame:
+def generate_model_summary_table(model_classes: List[str], data_set_name: str) -> pd.DataFrame:
     """
     This function generates a comparative performance summary table across all models in model_classes using
-    the same evaluation data for each model contained in eval_data_dict. The output summary table has the
-    model class name as the index (rows) and for each it records A). model size in terms of Embed Size,
-    Hidden Size and Total (Trainable) Params B). automatic evaluation metrics for DeuEng and C). automatic
-    evaluation metrics for EngDeu.
+    the same evaluation data for each model contained in the data set specified by data_set_name. The output
+    summary table has the model class name as the index (rows) and for each it records A). model size in terms
+    of Embed Size, Hidden Size and Total (Trainable) Params B). automatic evaluation metrics for DeuEng and
+    C). automatic evaluation metrics for EngDeu.
 
     Parameters
     ----------
     model_classes : List[str]
         A list of model class names e.g. ['Fwd_RNN', 'LSTM_Att', 'EDTM', "Google_API"].
-    eval_data_dict : Dict[str, List[str]]
-        A dictionary containing the dataset to be used for automatic model evaluation. The keys of the dict
-        should be "EngDeu" and "DeuEng" for the 2 directions of translation and the values should be a list
-        of parallel sentence tuples (src_sentence, tgt_sentence) where each sentence is recorded as a list of
-        sub-word tokens.
+    data_set_name : str
+        The name of the data set to use for this evaluation summary table e.g. "test" or "validation" etc.
 
     Returns
     -------
     summary_table : pd.DataFrame
         A comparative performance summary across models.
     """
+    eval_data_dict = build_eval_dataset(data_set_name) # Build the tokenized sub-word lists for each sentence
+    # which is a dictionary containing the dataset to be used for automatic model evaluation. The keys of the
+    # dict should be "EngDeu" and "DeuEng" for the 2 directions of translation and the values should be a list
+    # of parallel sentence tuples (src_sentence, tgt_sentence) where each sentence is recorded as a list of
+    # sub-word tokens.
+
     # Enumerate all the evaluation metrics used
     metrics = ["Perplexity", "BLEU", "NIST", "METEOR", "ROUGE", "TER", "BERT", "BLEURT", "COMET"]
     cols = pd.MultiIndex.from_tuples([("Model", x) for x in ["Embed Size", "Hidden Size", "Total Params"]] +
@@ -635,7 +659,7 @@ def generate_model_summary_table(model_classes: List[str],
 
     for model_class in tqdm(model_classes, ncols=75): # Try to generate data for this model if possible
         for (src_lang, tgt_lang) in [("deu", "eng"), ("eng", "deu")]:
-            translation_name = f"{src_lang.capitalize()}{tgt_lang.capitalize()}"
+            lang_pair = f"{src_lang.capitalize()}{tgt_lang.capitalize()}"
             model_save_dir = util.get_model_save_dir(model_class, src_lang, tgt_lang, False)
             if os.path.exists(f"{model_save_dir}/model.bin"): # Check if there is a model saved in this dir
                 model = getattr(all_models, model_class).load(f"{model_save_dir}/model.bin")  # Load model
@@ -644,10 +668,10 @@ def generate_model_summary_table(model_classes: List[str],
                 col = ("Model", "Total Params") # Record the number of trainable parameters in the model
                 summary_table.loc[model_class, col] = util.count_trainable_parameters(model)
                 # Compute automatic performance metrics for this model using the eval data set
-                model_smry = generate_model_eval_summary(model, eval_data_dict[translation_name])
+                model_smry = generate_model_eval_summary(model, eval_data_dict[lang_pair], data_set_name)
                 for eval_metric, metric_score in model_smry.items(): # Add each computed metric score to the
                     # summary df using the multi-index
-                    summary_table.loc[model_class, (translation_name, eval_metric)] = metric_score
+                    summary_table.loc[model_class, (lang_pair, eval_metric)] = metric_score
 
             elif model_class == "Google_API": # Handle this case separately, evaluate the Google Translate API
                 # outputs and add them to the summary table using the same eval metrics
@@ -655,16 +679,16 @@ def generate_model_summary_table(model_classes: List[str],
                 summary_table.loc[model_class, ("Model", "Hidden Size")] = np.nan
                 summary_table.loc[model_class, ("Model", "Total Params")] = np.nan
                 model = all_models.Google_API(src_lang, tgt_lang) # Load in the model
-                model_smry = generate_model_eval_summary(model, eval_data_dict[translation_name])
+                model_smry = generate_model_eval_summary(model, eval_data_dict[lang_pair], data_set_name)
                 for eval_metric, metric_score in model_smry.items(): # Add each computed metric score to the
                     # summary df using the multi-index
                     if eval_metric == "Perplexity": # NaN out the perplexity values from the Google API eval
-                        summary_table.loc[model_class, (translation_name, eval_metric)] = np.nan
+                        summary_table.loc[model_class, (lang_pair, eval_metric)] = np.nan
                     else: # If not perplexity, record the eval metric score as-is
-                        summary_table.loc[model_class, (translation_name, eval_metric)] = metric_score
+                        summary_table.loc[model_class, (lang_pair, eval_metric)] = metric_score
 
             else:  # If this model cannot be located, print a notification and move to the next one
-                print(f"No {translation_name} model found for {model_class}")
+                print(f"No {lang_pair} model found for {model_class}")
 
     return summary_table
 
@@ -733,13 +757,14 @@ if __name__ == "__main__":
     args = parser.parse_args()
     data_set_name = args.data_set_name
 
-    model_classes = ['Fwd_RNN', 'LSTM_Att', 'EDTM', 'Google_API'] # All the models to evaluate
+    model_classes = all_models.MODELS # Use all the models listed in all_models
+    # ['Fwd_RNN', 'LSTM_Att', 'EDTM', 'Google_API'] # All the models to evaluate
     # model_classes = ['Google_API']
 
     # Generate evaluation tables for the data set i.e. one of ["train_debug", "validation", "test"]
     print(f"Running model evaluation for {model_classes} using dataset={data_set_name}")
     start_time = time.time()
-    summary_table = generate_model_summary_table(model_classes, build_eval_dataset(data_set_name))
+    summary_table = generate_model_summary_table(model_classes, data_set_name)
     os.makedirs(os.path.join(BASE_PATH, "eval_tables"), exist_ok=True) # Ensure this folder exists
     summary_table.to_csv(f"eval_tables/{data_set_name}_eval.csv")  # Save the computed results
     print(f"\nSummary Table for Dataset={data_set_name}")

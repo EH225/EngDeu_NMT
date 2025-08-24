@@ -118,3 +118,9 @@ class Google_API(NMT):
             mt = [[self.cache_dict.get(s, ""), 0] for s in src_sentences]
 
         return mt
+
+    def save(self, model_path: str):
+        """
+        Placeholder method, no action for this model.
+        """
+        pass
