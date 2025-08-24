@@ -1011,7 +1011,8 @@ class EDTM(NMT):
         elif isinstance(src_sentences[0], str): # If 1 sentence is passed in, then add an outer list wrapper
             src_sentences = [src_sentences] # Make src_sentences a list of lists
             b = len(src_sentences) # Redefine to be 1
-        assert isinstance(beam_size, int) and 0 < beam_size <= 5, "beam_size must be an int [1, 5]"
+        msg = f"beam_size must be an int [1, 5], got, {beam_size}"
+        assert isinstance(beam_size, int) and 0 < beam_size <= 5, msg
         if k_pct is not None:  # If not None, then perform data-validation
             assert 0 < k_pct <= 1.0, "k_pct must be in (0, 1] if not None"
         if max_decode_lengths is None: # Default to allow for 20% more words per sentence if not specified
@@ -1205,14 +1206,14 @@ class EDTM(NMT):
         # Maintain a list of hypotheses which can be sorted by the first element to maintain the k best where
         # k = beam_size and each records (log_prob_sum, decoded_sub_word_tokens, dec_inputs) with
         # decoded_sub_word_tokens being list of strings and dec_inputs being a tensor of size (dec_len, embed)
-        hypotheses = [[0, ["<s>"]], ] # Start off with just 1 hypothesis i.e. the sentence start token
-        for h in hypotheses:
-            dec_inputs = self.target_embeddings(torch.tensor(self.vocab.tgt[h[1][-1]], dtype=torch.long,
-                                                             device=self.device).unsqueeze(0)) # (T=1, e)
-            if self.pos_emb == "learned":  # Add the positional embeddings to the token embeddings
-                dec_inputs += self.pos_embeddings[:, 0, :]
-            dec_inputs = self.ln_dec(dec_inputs) # Apply layer norm before being fed into the decoder
-            h.append(dec_inputs) # Add this tensor as the 3rd element of every hypothesis
+        h = [0, ["<s>"]]  # Start off with just 1 hypothesis i.e. the sentence start token
+        dec_inputs = self.target_embeddings(torch.tensor(self.vocab.tgt[h[1][-1]], dtype=torch.long,
+                                                         device=self.device).unsqueeze(0)) # (T=1, e)
+        if self.pos_emb == "learned":  # Add the positional embeddings to the token embeddings
+            dec_inputs += self.pos_embeddings[:, 0, :]
+        dec_inputs = self.ln_dec(dec_inputs) # Apply layer norm before being fed into the decoder
+        h.append(dec_inputs) # Add this tensor as the 3rd element of every hypothesis
+        hypotheses = [h, ] # Move into a list for iteration
 
         complete_hypotheses = [] # Collect the completed hypotheses and iter until we get k = beam_size
 

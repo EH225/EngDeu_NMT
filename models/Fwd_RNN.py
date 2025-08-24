@@ -377,7 +377,8 @@ class Fwd_RNN(NMT):
         elif isinstance(src_sentences[0], str): # If 1 sentence is passed in, then add an outer list wrapper
             src_sentences = [src_sentences] # Make src_sentences a list of lists
             b = len(src_sentences) # Redefine to be 1
-        assert isinstance(beam_size, int) and 0 < beam_size <= 5, "beam_size must be an int [1, 5]"
+        msg = f"beam_size must be an int [1, 5], got, {beam_size}"
+        assert isinstance(beam_size, int) and 0 < beam_size <= 5, msg
         if k_pct is not None:  # If not None, then perform data-validation
             assert 0 < k_pct <= 1.0, "k_pct must be in (0, 1] if not None"
         if max_decode_lengths is None: # Default to allow for 20% more words per sentence if not specified
@@ -396,6 +397,8 @@ class Fwd_RNN(NMT):
         argsort_idx = np.argsort([len(s) for i, s in enumerate(src_sentences)])[::-1]
         new_to_orig_idx = {int(x): i for i, x in enumerate(argsort_idx)} # Reverse the mapping backwards
         src_sentences = [src_sentences[idx] for idx in argsort_idx] # Re-order by sentence length (desc)
+
+        self.eval() # Set the model to eval mode so that dropout is not applied when generating values
 
         with torch.no_grad():  # no_grad() signals backend to throw away all gradients
 
