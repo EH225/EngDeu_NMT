@@ -547,6 +547,7 @@ class Fwd_RNN(NMT):
         assert isinstance(beam_size, int) and 0 < beam_size <= 5, "beam_size must be an int [1, 5]"
         assert len(dec_init_state.shape) == 2, "dec_init_state should be 2 dimensional"
         assert 0.6 <= alpha <= 1.0, "alpha must be between 0.5 and 1.0"
+        mdl = max_decode_length # Shorter alias
 
         # Maintain a list of hypotheses which can be sorted by the first element to maintain the k best where
         # k = beam_size and each records (log_prob_sum, decoded_sub_word_tokens, dec_state) with
@@ -586,8 +587,9 @@ class Fwd_RNN(NMT):
                     # Check if this hypothesis has been completed, if so, add it to complete_hypotheses
                     # instead of new_hypotheses so that we can exit the while loop. We don't count the start
                     # token as part of the max_decode_length, hence we minus 1 from the length of the decoded
-                    # sub-word token list of the hypothesis when checking for completion conditions
-                    if new_h[1][-1] == "</s>" or len(new_h[1]) - 1 == max_decode_length:
+                    # sub-word token list of the hypothesis when checking for completion conditions. Also
+                    # do not record [<s>, </s>] as a blank sentence either, require at least 3 tokens
+                    if (new_h[1][-1] == "</s>" and len(new_h[1]) > 2) or (len(new_h[1]) - 1 == mdl):
                         complete_hypotheses.append(new_h)
                     else: # Otherwise this new hypothesis is not yet completed, keep it in the running
                         new_hypotheses.append(new_h) # Add the new hypothesis to the new list of hypotheses

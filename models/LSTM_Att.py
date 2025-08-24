@@ -695,6 +695,7 @@ class LSTM_Att(NMT):
         assert len(enc_masks.shape) == 1, "enc_masks should be 1 dimensional"
         assert enc_hiddens.shape[0] == enc_masks.shape[0], "enc_hiddens and enc_masks should match in dim 0"
         assert 0.6 <= alpha <= 1.0, "alpha must be between 0.5 and 1.0"
+        mdl = max_decode_length # Shorter alias
 
         o_prev = torch.zeros(1, self.hidden_size, device=self.device)  # Initialize as zeros (b, h)
         # enc_hiddens comes in as size (src_len, 2*embed_size), expand to (beam_size, src_len, 2*embed_size)
@@ -751,8 +752,9 @@ class LSTM_Att(NMT):
                     # Check if this hypothesis has been completed, if so, add it to complete_hypotheses
                     # instead of new_hypotheses so that we can exit the while loop. We don't count the start
                     # token as part of the max_decode_length, hence we minus 1 from the length of the decoded
-                    # sub-word token list of the hypothesis when checking for completion conditions
-                    if new_h[1][-1] == "</s>" or len(new_h[1]) - 1 == max_decode_length:
+                    # sub-word token list of the hypothesis when checking for completion conditions. Also
+                    # do not record [<s>, </s>] as a blank sentence either, require at least 3 tokens
+                    if (new_h[1][-1] == "</s>" and len(new_h[1]) > 2) or (len(new_h[1]) - 1 == mdl):
                         complete_hypotheses.append(new_h)
                     else: # Otherwise this new hypothesis is not yet completed, keep it in the running
                         new_hypotheses.append(new_h) # Add the new hypothesis to the new list of hypotheses
@@ -760,11 +762,11 @@ class LSTM_Att(NMT):
             # Sort the new hypotheses by the sum of log probs divided by the Google NMT length penalty i.e.
             # a normalization constant of seq_len ^ (alpha) so that we do not unfairly penalize longer seqs
             # Sort this normalized avg log prob per token metric in descending order i.e. highst probs first
-            new_hypotheses.sort(key=lambda x: -x[0] / (len(x[1]) ** (alpha)))
+            new_hypotheses.sort(key=lambda x: -x[0] / (len(x[1]) ** (alpha)))  # Sort in descending order
             hypotheses = new_hypotheses[:beam_size] # Update for next iteration, keep only the top hypotheses
 
         # Once we've collected k = beam_size completed hypotheses, return the best one
-        complete_hypotheses.sort(key=lambda x: -x[0] / (len(x[1]) ** (alpha)))
+        complete_hypotheses.sort(key=lambda x: -x[0] / (len(x[1]) ** (alpha)))  # Sort in descending order
         return [complete_hypotheses[0][1], -complete_hypotheses[0][0]] # (work_token_list, neg_log_likelihood)
 
     def save(self, model_path: str, verbose: bool = False) -> None:
