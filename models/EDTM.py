@@ -1131,7 +1131,7 @@ class EDTM(NMT):
                 # Find what cutoff is required to make it into the words that collectively sum to form the
                 # top k percent of the probability distribution i.e. for a flat distribution there will be
                 # more words, for a more concentrated dist, there will be fewer words that make the cut
-                Y_hat_t = torch.zeros(b, dtype=int) # Start off with all zeros
+                Y_hat_t = torch.zeros(b, dtype=int, device=self.device) # Start off with all zeros
                 for i in range(b):
                     if finished_flags[i] == 0: # Compute if this sentence is not already finished
                         sorted_probs = prob_t[i, :].sort(descending=True) # Sort the probs of this dist
