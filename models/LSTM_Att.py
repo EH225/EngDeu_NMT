@@ -549,13 +549,6 @@ class LSTM_Att(NMT):
                                         beam_size, max_decode_lengths[i])
                       for i, src_s in enumerate(src_sentences)]
 
-        # ## TEMP TESTING ONLY ###
-        # i=0
-        # enc_hiddens = enc_hiddens[i,:,:]
-        # enc_masks = enc_masks[i, :]
-        # dec_init_state = (dec_init_state[0][i, :], dec_init_state[1][i, :])
-        # max_decode_length = max_decode_lengths[i]
-
         # Re-order before returning to re-instate the original sentence ordering
         mt = [mt[new_to_orig_idx[idx]] for idx in range(len(mt))]
         if tokenized is False:  # Convert the outputs into concatenated sentences to match the input format
