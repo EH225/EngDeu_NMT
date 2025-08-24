@@ -126,7 +126,6 @@ def compute_corpus_bleu_score(mt_df: pd.DataFrame, tgt_lang: str = "deu") -> flo
     return nltk.translate.bleu_score.corpus_bleu([[word_tokenize(s, language=lang)] for s in mt_df["tgt"]],
                                                  [word_tokenize(s, language=lang) for s in mt_df["mt"]])
 
-
 def compute_corpus_nist_score(mt_df: pd.DataFrame, tgt_lang: str = "deu") -> float:
     """
     Computes a corpus level NIST (National Institute of Standards and Technology) score for the input machine
@@ -604,10 +603,14 @@ def generate_model_eval_summary(model: NMT, eval_data: List[Tuple[List[str]]],
     if cached_dset_name is not None:  # Attempt to read in mt_df from the cached location
         try: # Try reading in the CSV file containing the mt_df for this data set
             mt_df = pd.read_csv(f"model_pred/{lang_pair}/{model.name}/{cached_dset_name}.csv")
+            print(f"Using {model.name} {lang_pair} {cached_dset_name} cached predictions")
         except: # Report if it cannot be done, mt_df remains None
             print(f"Cached mt_df for {model.name} {lang_pair} {cached_dset_name} could not be read")
     if mt_df is None:  # If unable to be read from cache or read_cache_pred is None, compute now on-the-fly
         mt_df = generate_mt_df(model, eval_data)
+
+    # If there are any blank translation outputs, replace NaN with "" so that we avoid errors
+    mt_df["mt"] = mt_df["mt"].replace(np.nan, "")
 
     eval_summary = pd.Series(dtype=float)  # Record in a pd.Series
     if model.name == "Google_API":
