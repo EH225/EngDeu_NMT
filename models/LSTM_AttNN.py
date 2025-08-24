@@ -665,7 +665,7 @@ class LSTM_AttNN(NMT):
             # dec_state was already updated in the step above so we do not need to do anything further
         return mt
 
-    def _beam_search(self, enc_hiddens: torch.Tensor, enc_masks: torch.Tensor, dec_init_state: torch.tensor,
+    def _beam_search(self, enc_hiddens: torch.Tensor, enc_masks: torch.Tensor, dec_init_state: torch.Tensor,
                      beam_size: int, max_decode_length: int,
                      alpha: float = 0.8) -> List[Union[List[str], float]]:
         """

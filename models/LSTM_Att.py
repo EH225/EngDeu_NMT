@@ -213,7 +213,6 @@ class LSTM_Att(NMT):
         # Return the sum of negative log-likelihoods across all target tokens for each sentence
         return -target_words_log_prob.sum(dim=1) # Returns a tensor of floats of size (batch_size, )
 
-
     def encode(self, source_padded: torch.Tensor,
                source_lengths: List[int]) -> Tuple[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]:
         """
@@ -277,7 +276,6 @@ class LSTM_Att(NMT):
         dec_init_state = (init_decoder_hidden, init_decoder_cell)
         # enc_hiddens = (b, src_len, h*2), (init_decoder_hidden=(b, h), init_decoder_cell=(b, h))
         return enc_hiddens, dec_init_state
-
 
     def decode(self, enc_hiddens: torch.Tensor, enc_masks: torch.Tensor,
                dec_init_state: Tuple[torch.Tensor, torch.Tensor],
@@ -351,7 +349,6 @@ class LSTM_Att(NMT):
         # size, h = hidden size.
         combined_outputs = torch.stack(combined_outputs).transpose(0, 1) # (batch_size, tgt_len, hidden_size)
         return combined_outputs
-
 
     def step(self, Ybar_t: torch.Tensor, dec_state: Tuple[torch.Tensor, torch.Tensor],
              enc_hiddens: torch.Tensor, enc_hiddens_proj: torch.Tensor,
@@ -659,7 +656,7 @@ class LSTM_Att(NMT):
             # dec_state was already updated in the step above so we do not need to do anything further
         return mt
 
-    def _beam_search(self, enc_hiddens: torch.Tensor, enc_masks: torch.Tensor, dec_init_state: torch.tensor,
+    def _beam_search(self, enc_hiddens: torch.Tensor, enc_masks: torch.Tensor, dec_init_state: torch.Tensor,
                      beam_size: int, max_decode_length: int,
                      alpha: float = 0.8) -> List[Union[List[str], float]]:
         """
