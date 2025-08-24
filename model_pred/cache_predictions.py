@@ -33,6 +33,7 @@ if __name__ == "__main__":
     print("kwargs:", kwargs)
 
     device = util.setup_device(try_gpu=True) # Train on a GPU if one is available
+    print(f"Model predictions will be made using the {device}\n")
 
     for data_set_name in data_set_names: # Generate predictions for all data sets
         eval_data_dict = model_eval.build_eval_dataset(data_set_name)
