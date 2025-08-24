@@ -23,8 +23,13 @@ if __name__ == "__main__":
     debug = args.debug.lower() == "true"
     beam_search = args.beam_search.lower() == "true"
 
+    msg = "Generating predictions using "
+    msg = msg + "beam search" if beam_search else msg + "greedy search"
+    print(msg) # Report what kind of search method is being uses
+
     data_set_names = ["train_tiny"] if debug is True else ["train_debug", "validation", "test"]
     kwargs = {"beam_size": 5} if beam_search is True else {"beam_size": 1, "k_pct": 0.1}
+    print("kwargs:", kwargs)
 
     for data_set_name in data_set_names: # Generate predictions for all data sets
         eval_data_dict = model_eval.build_eval_dataset(data_set_name)
