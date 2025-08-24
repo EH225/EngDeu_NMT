@@ -8,6 +8,23 @@ import pandas as pd
 import numpy as np
 import math, os, sys, importlib
 import torch.nn as nn
+import torch
+
+
+def setup_device(try_gpu: bool = True):
+    """
+    Setup the device used by PyTorch. If try_gpu is True, then we will attempt to locate GPU hardware.
+    """
+    device = torch.device("cpu") # Set to the CPU by default
+
+    if try_gpu is True: # Try looking for a GPU if there is one we can connect to
+        if torch.cuda.is_available():
+            device = torch.device("cuda")
+        elif torch.backends.mps.is_available() and torch.backends.mps.is_built():
+            device = torch.device("mps")
+
+    return device
+
 
 def get_model_save_dir(model_class: str, src_lang: str, tgt_lang: str, debug: bool = False) -> str:
     """

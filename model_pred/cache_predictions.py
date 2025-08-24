@@ -12,6 +12,7 @@ import util
 from models import all_models
 import model_eval
 
+
 if __name__ == "__main__":
     # Example usage:  python models/cache_predictions.py --debug=False --beam-search=True
     parser = argparse.ArgumentParser(description='Run model prediction caching')
@@ -31,12 +32,15 @@ if __name__ == "__main__":
     kwargs = {"beam_size": 5} if beam_search is True else {"beam_size": 1, "k_pct": 0.1}
     print("kwargs:", kwargs)
 
+    device = util.setup_device(try_gpu=True) # Train on a GPU if one is available
+
     for data_set_name in data_set_names: # Generate predictions for all data sets
         eval_data_dict = model_eval.build_eval_dataset(data_set_name)
         for model_class in all_models.MODELS: # Generate predictions for all models
             for (src_lang, tgt_lang) in [("deu", "eng"), ("eng", "deu")]:
                 lang_pair = f"{src_lang.capitalize()}{tgt_lang.capitalize()}"
                 model = all_models.load_model(model_class, src_lang, tgt_lang) # Load the model
+                model = model.to(device) # Move the model to the designated device before predicting
                 mt_df = model_eval.generate_mt_df(model, eval_data_dict[lang_pair], kwargs)
                 # Save the cached predictions
                 save_dir = f"model_pred/{lang_pair}/{model_class}/"

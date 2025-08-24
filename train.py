@@ -39,21 +39,6 @@ import torch.nn.utils
 DEBUG_TRAIN_PARAMS = {"log_niter": 1, "validation_niter": 3}
 BASE_PATH = os.path.abspath(os.path.dirname(__file__))
 
-def setup_device(try_gpu: bool = True):
-    """
-    Setup the device used by PyTorch. If try_gpu is True, then we will attempt to locate GPU hardware.
-    """
-    device = torch.device("cpu") # Set to the CPU by default
-
-    if try_gpu is True: # Try looking for a GPU if there is one we can connect to
-        if torch.cuda.is_available():
-            device = torch.device("cuda")
-        elif torch.backends.mps.is_available() and torch.backends.mps.is_built():
-            device = torch.device("mps")
-
-    return device
-
-
 def train_model(model: NMT, train_data: List[Tuple[List[str]]], dev_data: List[Tuple[List[str]]],
                 model_save_dir: str, params: dict = None) -> None:
     """
@@ -97,9 +82,9 @@ def train_model(model: NMT, train_data: List[Tuple[List[str]]], dev_data: List[T
     #### Training Parameters ####
 
     print(f'Starting {model.name} training', file=sys.stderr)
-    os.makedirs(model_save_path, exist_ok=True) # Ensure this folder exists, create if needed
+    os.makedirs(model_save_dir, exist_ok=True) # Ensure this folder exists, create if needed
     model_save_path = os.path.join(model_save_dir, "model.bin") # Model save location
-    device = setup_device(try_gpu=True) # Train on a GPU if one is available
+    device = util.setup_device(try_gpu=True) # Train on a GPU if one is available
     print(f'Model training will use the {device}', file=sys.stderr)
 
     if device == "cuda": # Only try compiling the model iff training on the GPU

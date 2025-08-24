@@ -423,7 +423,6 @@ class LSTM_Att(NMT):
         # Returns the updated decoder state, the O_t combined outputs and the attention scores e_t
         return dec_state, O_t, e_t
 
-
     def translate(self, src_sentences: Union[List[str], List[List[str]]], beam_size: int = 1,
                       k_pct: float = 0.1, max_decode_lengths: Union[List[int], int] = None,
                       tokenized: bool = True) -> List[List[Union[Union[str, List[str]], float]]]:
