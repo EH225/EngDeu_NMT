@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-This module contains data structures for a language's vocab that map between sub-word strings and word id ints
-that are used in a language model's embedding layer to convert to word embedding vectors.
+This module contains data structures for a language's vocab that maps between sub-word strings and word id
+ints that are used in a language model's embedding layer to convert to word embedding vectors.
 
 When run, this module also trains sub-word tokenizer models for Eng and Deu and saves them to disk as well
 as cached Vocab data structures for Eng to Deu and Deu to Eng translation models.
@@ -19,6 +19,7 @@ import sentencepiece as spm
 
 BASE_PATH = os.path.abspath(os.path.dirname(__file__))
 DATEDT_DIR = os.path.join(BASE_PATH, "..", "dataset")
+
 
 ########################
 ### Helper Functions ###
@@ -46,15 +47,15 @@ def pad_sentences(sentences: List[List[str]], pad_token: str) -> List[List[str]]
         Returns a list of padded sentences where each sentence in the batch is the same length.
     """
     padded_sentences = []
-    max_len = max([len(s) for s in sentences]) # Find how long the max length sentence is
-    for s in sentences: # Add padding to each sentence as needed
+    max_len = max([len(s) for s in sentences])  # Find how long the max length sentence is
+    for s in sentences:  # Add padding to each sentence as needed
         padded_sentences.append(s + [pad_token] * (max_len - len(s)))
     return padded_sentences
 
 
 def train_subword_tokenizer(file_path: str, language_abbv: str, vocab_size: int):
     """
-    Uses the SentencePiece package to train a sub-word tokenizer model for a the specified language corpus
+    Uses the SentencePiece package to train a sub-word tokenizer model for the specified language corpus
     and saves the model to disk. Returns a list of unique sub-word tokens created in the model.
 
     Parameters
@@ -72,14 +73,14 @@ def train_subword_tokenizer(file_path: str, language_abbv: str, vocab_size: int)
     sp_list : List[List[str]]
         A list of unique sub-word tokens derived from the corpus used for creating a vocab.
     """
-    os.makedirs(os.path.join(BASE_PATH, language_abbv), exist_ok=True) # Ensure this folder exists
+    os.makedirs(os.path.join(BASE_PATH, language_abbv), exist_ok=True)  # Ensure this folder exists
     # Fit a tokenizer to the training data, create a set of sub-word tokens for this language
     spm.SentencePieceTrainer.train(input=file_path,
                                    model_prefix=os.path.join(BASE_PATH, language_abbv, language_abbv),
                                    vocab_size=vocab_size)
     sp = spm.SentencePieceProcessor()
     sp.load(f'{language_abbv}/{language_abbv}.model')  # Loads {language_abbv}.model file generated above
-    sp_list = [sp.id_to_piece(piece_id) for piece_id in range(sp.get_piece_size())] # The list of subwords
+    sp_list = [sp.id_to_piece(piece_id) for piece_id in range(sp.get_piece_size())]  # The list of subwords
     return sp_list
 
 
@@ -91,6 +92,7 @@ class VocabEntry:
     """
     Vocabulary Entry data structure for 1 language (i.e. either the source or target).
     """
+
     def __init__(self, lang: str, word2id: dict = None):
         """
         Instantiates a VocabEntry instance.
@@ -102,17 +104,17 @@ class VocabEntry:
         word2id : dict, optional
             An optional dictionary mapping of words to indices. The default is None.
         """
-        if word2id is not None: # If a word-to-index mapping is provided then use it
+        if word2id is not None:  # If a word-to-index mapping is provided then use it
             self.word2id = word2id
-        else: # Otherwise create a new one
+        else:  # Otherwise create a new one
             self.word2id = dict()  # Create a sub-word to word-id mapping dict
-            self.word2id['<pad>'] = 0   # Pad Token
-            self.word2id['<s>'] = 1 # Start Token
-            self.word2id['</s>'] = 2    # End Token
-            self.word2id['<unk>'] = 3   # Unknown Token
-        self.unk_id = self.word2id['<unk>'] # Record the index id of the unknown token
-        self.id2word = {v: k for k, v in self.word2id.items()} # Add a reverse mapping from int to token
-        self.lang = lang # Record the language of this vocabulary
+            self.word2id['<pad>'] = 0  # Pad Token
+            self.word2id['<s>'] = 1  # Start Token
+            self.word2id['</s>'] = 2  # End Token
+            self.word2id['<unk>'] = 3  # Unknown Token
+        self.unk_id = self.word2id['<unk>']  # Record the index id of the unknown token
+        self.id2word = {v: k for k, v in self.word2id.items()}  # Add a reverse mapping from int to token
+        self.lang = lang  # Record the language of this vocabulary
 
     def __getitem__(self, word: str) -> int:
         """
@@ -195,14 +197,14 @@ class VocabEntry:
         int
             The word id of the input word internally assigned.
         """
-        if word not in self.word2id: # Add to the vocab if word is not already part of it
+        if word not in self.word2id:  # Add to the vocab if word is not already part of it
             word_id = self.word2id[word] = len(self)
             self.id2word[word_id] = word
             return word_id
-        else: # If already part of the vocab, look up the id already assigned to it
+        else:  # If already part of the vocab, look up the id already assigned to it
             return self[word]
 
-    def words2indices(self, sentences: List[List[str]]) -> List[List[str]]:
+    def words2indices(self, sentences: List[List[str]]) -> list[list[int]] | list[int]:
         """
         Converts a list of sentences (a list of list of strings) into word ids. Also accepts an single list
         of words and returns a single list of word ids.
@@ -217,9 +219,9 @@ class VocabEntry:
         List[List[str]]
             A list of sentences where each sentence is a list of word ids.
         """
-        if isinstance(sentences[0], list): # A list of sentences passed in
+        if isinstance(sentences[0], list):  # A list of sentences passed in
             return [[self[word] for word in sentence] for sentence in sentences]
-        else: # Only 1 sentence passed in
+        else:  # Only 1 sentence passed in
             return [self[word] for word in sentences]
 
     def indices2words(self, word_ids: List[int]) -> List[str]:
@@ -277,14 +279,14 @@ class VocabEntry:
         vocab_entry : VocabEntry
             A VocabEntry instance produced from the provided text corpus.
         """
-        vocab_entry = VocabEntry() # Instantiate a new object instance
-        word_freq = Counter(chain(*corpus)) # Count the freq of occurence for each word
+        vocab_entry = VocabEntry()  # Instantiate a new object instance
+        word_freq = Counter(chain(*corpus))  # Count the freq of occurrence for each word
         print(f"Total number of unique word tokens: {len(word_freq)}")
-        valid_words = [w for w, v in word_freq.items() if v >= freq_cutoff] # Drop infreq words
+        valid_words = [w for w, v in word_freq.items() if v >= freq_cutoff]  # Drop infrequent words
         print(f"Total number of unique word tokens with freq >= {freq_cutoff}: {len(valid_words)}")
-        # Limit to using the max_size number of most frequently occuring tokens
+        # Limit to using the max_size number of most frequently occurring tokens
         top_k_words = sorted(valid_words, key=lambda w: word_freq[w], reverse=True)[:max_size]
-        for word in top_k_words: # Add each of these word tokens to the vocabulary
+        for word in top_k_words:  # Add each of these word tokens to the vocabulary
             vocab_entry.add(word)
         return vocab_entry
 
@@ -295,7 +297,9 @@ class VocabEntry:
 
         Parameters
         ----------
-        subword_list : List[str]
+        lang : str
+            The language of the word_token_list e.g. "eng" or "deu".
+        word_token_list : List[str]
             A list of word tokens strings.
 
         Returns
@@ -303,8 +307,8 @@ class VocabEntry:
         vocab_entry : VocabEntry
             A VocabEntry instance produced from the provided word_token_list.
         """
-        vocab_entry = VocabEntry(lang=lang) # Instantiate a new object instance
-        for subword in word_token_list: # Fill the vocab with the word tokens provided
+        vocab_entry = VocabEntry(lang=lang)  # Instantiate a new object instance
+        for subword in word_token_list:  # Fill the vocab with the word tokens provided
             vocab_entry.add(subword)
         return vocab_entry
 
@@ -313,9 +317,10 @@ class Vocab:
     """
     A data structure containing a VocabEntry for both the source (src) and target (tgt) language.
     """
+
     def __init__(self, src_lang: str, tgt_lang: str, src_vocab: VocabEntry, tgt_vocab: VocabEntry):
         """
-        Instantiates the combined bi-lingual Vocab object.
+        Instantiates the combined bilingual Vocab object.
 
         Parameters
         ----------
@@ -335,7 +340,7 @@ class Vocab:
         self.tgt = tgt_vocab
 
     @staticmethod
-    def build(src_lang: str, tgt_lang: str, soruce_word_tokens: List[str],
+    def build(src_lang: str, tgt_lang: str, source_word_tokens: List[str],
               target_word_tokens: List[str]) -> Vocab:
         """
         Constructs a Vocab object instance using a list of
@@ -346,7 +351,7 @@ class Vocab:
             The abbreviation of the source language e.g. "eng" or "deu".
         tgt_lang : str
             The abbreviation of the target language e.g. "eng" or "deu".
-        soruce_word_tokens : List[str]
+        source_word_tokens : List[str]
             A list of word tokens from the source language to construct a vocab out of.
         target_word_tokens : List[str]
             A list of word tokens from the target language to construct a vocab out of.
@@ -356,7 +361,7 @@ class Vocab:
         Vocab
             A Vocab object instance.
         """
-        src = VocabEntry.from_token_list(src_lang, soruce_word_tokens)
+        src = VocabEntry.from_token_list(src_lang, source_word_tokens)
         tgt = VocabEntry.from_token_list(tgt_lang, target_word_tokens)
         return Vocab(src_lang, tgt_lang, src, tgt)
 

@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-This module contains functionalities shared among multiple modules e.g. train, model_eval etc.
+This module contains general utility functionalities shared among multiple modules e.g. train, model_eval etc.
 """
 from typing import List, Tuple, Union
 import sentencepiece as spm
@@ -15,9 +15,9 @@ def setup_device(try_gpu: bool = True):
     """
     Setup the device used by PyTorch. If try_gpu is True, then we will attempt to locate GPU hardware.
     """
-    device = torch.device("cpu") # Set to the CPU by default
+    device = torch.device("cpu")  # Set to the CPU by default
 
-    if try_gpu is True: # Try looking for a GPU if there is one we can connect to
+    if try_gpu is True:  # Try looking for a GPU if there is one we can connect to
         if torch.cuda.is_available():
             device = torch.device("cuda")
         elif torch.backends.mps.is_available() and torch.backends.mps.is_built():
@@ -48,7 +48,7 @@ def get_model_save_dir(model_class: str, src_lang: str, tgt_lang: str, debug: bo
     """
     if debug is False:
         return f"saved_models/{model_class}/{src_lang.capitalize()}{tgt_lang.capitalize()}/"
-    else: # Differentiate so that we do not accidently save over a trained model when debug testing
+    else:  # Differentiate so that we do not accidentally save over a trained model when debug testing
         return f"saved_models/debug/{model_class}/{src_lang.capitalize()}{tgt_lang.capitalize()}/"
 
 
@@ -60,7 +60,7 @@ def read_corpus(lang: str, subset: str, is_tgt: bool, tokenize: bool = True) -> 
     tokens according to a pre-trained tokenizer model saved to disk.
 
     Set is_tgt = True if the data set being read in is to be used as a target data set. If so, then all the
-    sentences will have a <s> start sentence token appeneded to the front and a </s> end sentence token
+    sentences will have a <s> start sentence token appended to the front and a </s> end sentence token
     appended to the end.
 
     Parameters
@@ -81,17 +81,17 @@ def read_corpus(lang: str, subset: str, is_tgt: bool, tokenize: bool = True) -> 
         List of lists where each list is a collection of sub-word tokens.
     """
     file_path = f"dataset/{lang}/{subset}.csv"
-    sentences = pd.read_csv(file_path) # Read in the entire specified data set using pandas
+    sentences = pd.read_csv(file_path)  # Read in the entire specified data set using pandas
     if tokenize is False:
         return sentences.iloc[:, 0].to_list()
 
-    tokenized_sentences = [] # Collect the tokenized sentences
-    sp = spm.SentencePieceProcessor() # Instantiate the tokenizer model
-    sp.load(f"vocab/{lang}/{lang}.model") # Load in the pre-trained tokenizer model
+    tokenized_sentences = []  # Collect the tokenized sentences
+    sp = spm.SentencePieceProcessor()  # Instantiate the tokenizer model
+    sp.load(f"vocab/{lang}/{lang}.model")  # Load in the pre-trained tokenizer model
     tokenized_sentences = sentences[sentences.columns[0]].astype(str).apply(lambda x: sp.encode_as_pieces(x))
-    tokenized_sentences = list(tokenized_sentences.values) # Convert to a list of lists
+    tokenized_sentences = list(tokenized_sentences.values)  # Convert to a list of lists
 
-    if is_tgt is True: # Only append <s> and </s> tokens if this is a target data set
+    if is_tgt is True:  # Only append <s> and </s> tokens if this is a target data set
         for s in tokenized_sentences:
             s.insert(0, "<s>")
             s.append('</s>')
@@ -125,14 +125,14 @@ def batch_iter(data: List[Tuple[List[str]]], batch_size: int, shuffle: bool = Fa
         A list of target language sentences.
 
     """
-    n_batches = math.ceil(len(data) / batch_size) # How many total batches to iter over the whole data set
-    batch_idx = list(range(n_batches)) # Number the batches
+    n_batches = math.ceil(len(data) / batch_size)  # How many total batches to iter over the whole data set
+    batch_idx = list(range(n_batches))  # Number the batches
 
-    if shuffle is True: # Sort by source sentence length before batching, then randomly shuffle the batches
-        data = sorted(data, key=lambda x: len(x[0]), reverse=True) # Sort by source sentence, longest first
-        np.random.shuffle(batch_idx) # Randomly shuffle the ordering of the batchs to use
+    if shuffle is True:  # Sort by source sentence length before batching, then randomly shuffle the batches
+        data = sorted(data, key=lambda x: len(x[0]), reverse=True)  # Sort by source sentence, longest first
+        np.random.shuffle(batch_idx)  # Randomly shuffle the ordering of the batches to use
 
-    for i in batch_idx: # Iterate over how many batches are required to cover the whole data set
+    for i in batch_idx:  # Iterate over how many batches are required to cover the whole data set
         examples = data[(i * batch_size):(i + 1) * batch_size]
         src_sentences = [e[0] for e in examples]
         tgt_sentences = [e[1] for e in examples]
@@ -142,7 +142,7 @@ def batch_iter(data: List[Tuple[List[str]]], batch_size: int, shuffle: bool = Fa
 def tokenize_sentences(sentences: List[str], lang: str, is_tgt: bool = False) -> List[List[str]]:
     """
     Applies the pre-trained sub-word tokenizer to a collection of input sentences. If is_tgt is True, then
-    <s> start and </s> end of sentence tokens are appened to the front and back of each sentence.
+    <s> start and </s> end of sentence tokens are append to the front and back of each sentence.
 
     Parameters
     ----------
@@ -159,8 +159,8 @@ def tokenize_sentences(sentences: List[str], lang: str, is_tgt: bool = False) ->
     List[List[str]]
         Outputs a list of sentences that are each a list of sub-word tokens.
     """
-    sp = spm.SentencePieceProcessor() # Instantiate the tokenizer model
-    sp.load(f"vocab/{lang}/{lang}.model") # Load in the pre-trained weights
+    sp = spm.SentencePieceProcessor()  # Instantiate the tokenizer model
+    sp.load(f"vocab/{lang}/{lang}.model")  # Load in the pre-trained weights
     tokenized_sentences = [sp.encode_as_pieces(sentence) for sentence in sentences]
     if is_tgt is True:  # Only append <s> and </s> tokens if this is a target data set
         for s in tokenized_sentences:
@@ -185,10 +185,10 @@ def tokens_to_str(tokenized_sentence: List[str]) -> str:
     str
         A plain text sentence derived from the sub-word tokens.
     """
-    tokenized_sentence = tokenized_sentence.copy() # Copy to avoid mutation
-    if len(tokenized_sentence) > 0 and tokenized_sentence[-1] == "</s>": # Remove the start token if present
+    tokenized_sentence = tokenized_sentence.copy()  # Copy to avoid mutation
+    if len(tokenized_sentence) > 0 and tokenized_sentence[-1] == "</s>":  # Remove the start token if present
         tokenized_sentence.pop()
-    if len(tokenized_sentence) > 0 and tokenized_sentence[0] == "<s>": # Remove the end token if present
+    if len(tokenized_sentence) > 0 and tokenized_sentence[0] == "<s>":  # Remove the end token if present
         tokenized_sentence.pop(0)
     return ''.join(tokenized_sentence).replace('▁', ' ').strip()
 

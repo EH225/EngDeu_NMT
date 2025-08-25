@@ -2,15 +2,16 @@
 # -*- coding: utf-8 -*-
 
 from abc import ABC, abstractmethod
-from collections import namedtuple
-import sys, os
-from typing import List, Tuple, Dict, Set, Union
 import torch
 import torch.nn as nn
 import torch.nn.utils
 
 
 class NMT(nn.Module, ABC):
+    """
+    This class generically outlines the  methods that all neural machine translation (NMT) models should have.
+    """
+
     @abstractmethod
     def forward(self, *args, **kwargs):
         """

@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
-This module contains helper functions for model evaluation e.g. functions to compute model perplexity, BLEU
-scores, METEOR, BERTscores etc. and also model summary comparison tables.
+This module contains helper functions for model evaluation e.g. functions to compute model perplexity, BLEU,
+NIST, METEOR, ROUGE, TER, BERT, BLEURT, COMET and also model summary comparison tables.
 """
 import os, sys
 BASE_PATH = os.path.abspath(os.path.dirname(__file__))
@@ -20,6 +20,7 @@ import torch, os
 from tqdm import tqdm
 from termcolor import colored as c
 import time
+
 
 ############################################
 ### Automatic Model Evaluation Functions ###
@@ -50,23 +51,23 @@ def compute_perplexity(model: NMT, eval_data: List[Tuple[List[str]]], batch_size
     ppl : float
         A perplexity score of the model evaluated over the eval_data.
     """
-    was_training = model.training # Check if the model was previously in training mode, save for later
-    model.eval() # Switch the model to evaluation mode, do not track gradients
+    was_training = model.training  # Check if the model was previously in training mode, save for later
+    model.eval()  # Switch the model to evaluation mode, do not track gradients
 
-    cuml_loss = 0.0 # Track the cumulative loss over all the eval_data the model is evaluated on
-    cuml_tgt_words = 0.0 # Track how many total target language output words were in the eval_data
+    cuml_loss = 0.0  # Track the cumulative loss over all the eval_data the model is evaluated on
+    cuml_tgt_words = 0.0  # Track how many total target language output words were in the eval_data
 
     with torch.no_grad():  # no_grad() signals backend to throw away all gradients
         for src_sentences, tgt_sentences in util.batch_iter(eval_data, batch_size, shuffle=True):
-            loss = model(src_sentences, tgt_sentences, eps=0).sum() # Compute the forward function i.e. the
+            loss = model(src_sentences, tgt_sentences, eps=0).sum()  # Compute the forward function i.e. the
             # negative log-likelihood of the output target words according to the model without any smoothing
-            cuml_loss += loss.item() # Accumulate the loss
+            cuml_loss += loss.item()  # Accumulate the loss
             tgt_word_num_to_predict = sum(len(s[1:]) for s in tgt_sentences)  # omitting leading `<s>`
-            cuml_tgt_words += tgt_word_num_to_predict # Count tgt words that are in this batch of eval_data
+            cuml_tgt_words += tgt_word_num_to_predict  # Count tgt words that are in this batch of eval_data
 
-        ppl = np.exp(cuml_loss / cuml_tgt_words) # Compute the preplexity score of the model
+        ppl = np.exp(cuml_loss / cuml_tgt_words)  # Compute the perplexity score of the model
 
-    if was_training: # If the model was training, then set it back to that config before exiting
+    if was_training:  # If the model was training, then set it back to that config before exiting
         model.train()
 
     return ppl
@@ -91,10 +92,10 @@ def compute_corpus_bleu_score(mt_df: pd.DataFrame, tgt_lang: str = "deu") -> flo
         to the reference(s) which is then averaged across all values of n with more weight given to the larger
         values of n
 
-        2). applying a brevity penality for short output translations and
+        2). applying a brevity penalty for short output translations and
 
         3). clipping to prevent limit the number of n-gram matches that are allowed to be counted to the max
-            number of their occurence in any of the reference examples provided.
+            number of their occurrence in any of the reference examples provided.
 
     This metric essentially looks at how many of the n-grams of the hypothesis are found in one of the
     references provided. with some adjustments made along the way.
@@ -126,6 +127,7 @@ def compute_corpus_bleu_score(mt_df: pd.DataFrame, tgt_lang: str = "deu") -> flo
     return nltk.translate.bleu_score.corpus_bleu([[word_tokenize(s, language=lang)] for s in mt_df["tgt"]],
                                                  [word_tokenize(s, language=lang) for s in mt_df["mt"]])
 
+
 def compute_corpus_nist_score(mt_df: pd.DataFrame, tgt_lang: str = "deu") -> float:
     """
     Computes a corpus level NIST (National Institute of Standards and Technology) score for the input machine
@@ -135,9 +137,9 @@ def compute_corpus_nist_score(mt_df: pd.DataFrame, tgt_lang: str = "deu") -> flo
     This lexical-based automatic evaluation metric of translation quality utilizes n-gram matching (much like
     BLEU) to evaluate the similarity of 2 sentences in the same language by using word precision. The main
     difference of this measure vs BLEU is that n-gram matches are weighted according to their frequency of
-    occurance with higher weight allocated to less frequeny n-grams (referred to as information weighting).
+    occurrence with higher weight allocated to less frequent n-grams (referred to as information weighting).
 
-    While simple and fast to compute, it does not allows for the usage of synonyms or stemming, this metric
+    While simple and fast to compute, it does not allow for the usage of synonyms or stemming, this metric
     looks for exact n-gram matches and also does not account for recall i.e. does not consider what percent
     of the reference translation is matched, only how much of the hypothesis, hence the brevity penalty since
     it is easier for a higher percentage of the n-grams of the hypothesis to be matched if there are few of
@@ -178,7 +180,7 @@ def compute_corpus_meteor_score(mt_df: pd.DataFrame, tgt_lang: str = "deu") -> f
     See: https://www.nltk.org/api/nltk.translate.meteor_score.html for details.
 
     This lexical-based automatic evaluation metric of translation quality is an improvement on some of the
-    short comings of BLEU and considers factors such as word order, synonyms, stemming, and exact word
+    shortcomings of BLEU and considers factors such as word order, synonyms, stemming, and exact word
     matches. But it still has a limited ability to compare the meanings of translations directly and assess
     their overall fluency. This measure tends to correlate better with human evaluation than BLEU scores.
 
@@ -190,7 +192,7 @@ def compute_corpus_meteor_score(mt_df: pd.DataFrame, tgt_lang: str = "deu") -> f
 
     METEOR is computed as the harmonic mean of precision and recall with more weight on precision:
         F-Score = (10 * P * R) / (R + 9 * P)
-    There is also a penalty applied which rewards longer contigious matches.
+    There is also a penalty applied which rewards longer contiguous matches.
 
     The METEOR score per sentence ranges from [0, 1] and the corpus level score is obtained by averaging over
     all sentence scores. Higher scores are considered better and a score of 0.5 or so indicates good
@@ -221,10 +223,10 @@ def compute_corpus_meteor_score(mt_df: pd.DataFrame, tgt_lang: str = "deu") -> f
     from nltk.tokenize import word_tokenize
     assert tgt_lang in ["eng", "deu"], "tgt_lang must be either 'eng' or 'deu'"
     lang = "english" if tgt_lang == "eng" else "german"
-    stemmer = SnowballStemmer(lang) # Initialize the word stemmer
-    meteor_scores_list = [] # Record the score for each sentence
+    stemmer = SnowballStemmer(lang)  # Initialize the word stemmer
+    meteor_scores_list = []  # Record the score for each sentence
     for ref, hyp in zip([[word_tokenize(s, language=lang)] for s in mt_df["tgt"]],
-                         [word_tokenize(s, language=lang) for s in mt_df["mt"]]):
+                        [word_tokenize(s, language=lang) for s in mt_df["mt"]]):
         # Calculate METEOR score for each sentence pair
         score = nltk.translate.meteor_score.meteor_score(references=ref, hypothesis=hyp,
                                                          stemmer=stemmer, wordnet=wordnet)
@@ -239,7 +241,7 @@ def compute_corpus_rouge_score(mt_df: pd.DataFrame) -> float:
     for more details.
 
     This lexical-based automatic evaluation metric of translation quality combines n-gram matching with
-    longest common subsequence metrics for a combined overall socre. ROUGE is often used for evaluating the
+    longest common subsequence metrics for a combined overall score. ROUGE is often used for evaluating the
     quality of text summarization, but is also used for machine translation tasks. There are a number of
     variants used including:
         ROUGE-N: Measures the number of n-gram matches between the hypothesis and summary as a percentage of
@@ -255,7 +257,7 @@ def compute_corpus_rouge_score(mt_df: pd.DataFrame) -> float:
 
     Like many other lexical-based automatic evaluation metrics, ROUGE does not directly measure whether the
     translation is semantically correct, it looks for matching words between the hypothesis and reference
-    provided and does not recognize the usage of synonyms and may penalized semantically equlivalent
+    provided and does not recognize the usage of synonyms and may penalize semantically equivalent
     word-order differences.
 
     The ROUGE score per sentence ranges from [0, 1] and the corpus level score is obtained by averaging over
@@ -288,15 +290,15 @@ def compute_corpus_rouge_score(mt_df: pd.DataFrame) -> float:
 
     # Using the evaluate package
     import evaluate
-    rouge_scorer = evaluate.load('rouge') # Instantiate the ROUGE scorer obj
+    rouge_scorer = evaluate.load('rouge')  # Instantiate the ROUGE scorer obj
     results = rouge_scorer.compute(predictions=list(mt_df["mt"].values),
-                                 references=[[x] for x in mt_df["tgt"].to_list()])
+                                   references=[[x] for x in mt_df["tgt"].to_list()])
     return (results["rouge1"] + results["rouge2"] + results["rougeL"]) / 3
 
 
 def compute_corpus_ter_score(mt_df: pd.DataFrame) -> float:
     """
-    Computes a corpus level TER (Translation Edit Rate) socre for the input machine translation dataframe
+    Computes a corpus level TER (Translation Edit Rate) score for the input machine translation dataframe
     (mt_df) provided. See https://huggingface.co/spaces/evaluate-metric/ter for details.
 
     This lexical-based automatic evaluation metric of translation quality measures the number of edit
@@ -316,7 +318,7 @@ def compute_corpus_ter_score(mt_df: pd.DataFrame) -> float:
 
     The TER score per sentence ranges from [0, 100+] and the corpus level score is obtained by averaging over
     all sentence scores. Lower scores (i.e. fewer edits) are considered better and a score of 65 or less
-    is generally considered good. TER scores > 100 are theoredically possiable, but uncommon. E.g. if the
+    is generally considered good. TER scores > 100 are theoretically possible, but uncommon. E.g. if the
     hypothesis contained more words than the reference and none of them matched, then the first n would be
     substituted to match the reference and the rest thereafter would be deleted which would add up to more
     edit operations than there were reference words.
@@ -333,7 +335,7 @@ def compute_corpus_ter_score(mt_df: pd.DataFrame) -> float:
         A corpus-level TER score ranging from 0 to 100+.
     """
     import evaluate
-    ter_metric = evaluate.load("ter") # Load the TER metric evaluator and run it on the sentences provided
+    ter_metric = evaluate.load("ter")  # Load the TER metric evaluator and run it on the sentences provided
     results = ter_metric.compute(predictions=list(mt_df["mt"].values),
                                  references=[[x] for x in mt_df["tgt"].to_list()])
     return results["score"]
@@ -347,7 +349,7 @@ def compute_corpus_bert_score(mt_df: pd.DataFrame, tgt_lang: str = "deu") -> flo
     This embedding model-based automatic evaluation metric of translation quality is an improvement on many
     lexical-based methods by using a large-language model transformer (BERT) to generate deep contextual
     representations of the input sentences provided. BERT is better able to handle synonym similarity, word
-    order choice, context, and paraphrasing than other simplier models. Its main limitation is that it takes
+    order choice, context, and paraphrasing than other simpler models. Its main limitation is that it takes
     longer to compute given the use of an LLM to generate latent representations of each input word. BERT
     scores generally correlate well with human evaluation scoring.
 
@@ -355,7 +357,7 @@ def compute_corpus_bert_score(mt_df: pd.DataFrame, tgt_lang: str = "deu") -> flo
     representations of each input word from both texts separately, and then computes the cosine similarities
     between contextual embeddings of the 2 sources with a greedy-matching approach to maximize similarities.
 
-    BERT scores combine recision and recall using F1-score and return a value between [0, 1] with 1 being
+    BERT scores combine precision and recall using F1-score and return a value between [0, 1] with 1 being
     the highest score. A score of 0.7-0.8 is generally considered good, 0.8-0.9 is considered very good, and
     above 0.9 is considered excellent.
 
@@ -377,7 +379,7 @@ def compute_corpus_bert_score(mt_df: pd.DataFrame, tgt_lang: str = "deu") -> flo
     lang = "en" if tgt_lang == "eng" else "de"
     bert_model = BERTScorer(model_type='bert-base-multilingual-cased', lang=lang, rescale_with_baseline=True)
     P, R, F1 = bert_model.score(mt_df["mt"].tolist(), mt_df["tgt"].tolist())
-    return F1.mean().item() # Average across all sentences and return a float
+    return F1.mean().item()  # Average across all sentences and return a float
 
 
 def compute_corpus_bleurt_score(mt_df: pd.DataFrame) -> float:
@@ -387,13 +389,13 @@ def compute_corpus_bleurt_score(mt_df: pd.DataFrame) -> float:
     See: https://github.com/google-research/bleurt for details.
 
     This embedding model-based automatic evaluation metric of translation quality is an improvement on many
-    lexical-based methods and simplier model-based methods such as BERTScore. The BLEURT model begins with a
+    lexical-based methods and simpler model-based methods such as BERTScore. The BLEURT model begins with a
     pre-trained BERT model, which is then trained on synthetic sentence pairs before being fine-tuned on
     data sets of human evaluations of translation quality. This makes BLEURT more correlated with human
-    evaluator scorings than non-learned evaluation metrics such as BERTScore.
+    evaluator scoring than non-learned evaluation metrics such as BERTScore.
     See https://research.google/blog/evaluating-natural-language-generation-with-bleurt/ for details.
 
-    BLEURT scores trypically range from -1 to +1 with higher scores being preferred. Scores of 0.7 or greater
+    BLEURT scores typically range from -1 to +1 with higher scores being preferred. Scores of 0.7 or greater
     generally reflect strong translation quality.
 
     Use: pip install git+https://github.com/google-research/bleurt.git to install this repo.
@@ -410,7 +412,7 @@ def compute_corpus_bleurt_score(mt_df: pd.DataFrame) -> float:
         A corpus-level BLEURT score ranging from -1 to +1.
     """
     import evaluate
-    bleurt = evaluate.load("bleurt", module_type="metric", checkpoint="BLEURT-20") # Multi-lingual model
+    bleurt = evaluate.load("bleurt", module_type="metric", checkpoint="BLEURT-20")  # Multi-lingual model
     results = bleurt.compute(predictions=mt_df["mt"].tolist(), references=mt_df["tgt"].tolist())
     return sum(results["scores"]) / len(results["scores"])
 
@@ -445,11 +447,11 @@ def compute_corpus_comet_score(mt_df: pd.DataFrame) -> float:
         A corpus-level COMET score ranging from 0 to 1.
     """
     from comet import download_model, load_from_checkpoint  # Import required dependency
-    model_path = download_model("Unbabel/wmt22-comet-da") # Download the evaluation model
-    model = load_from_checkpoint(model_path) # Load the model used for mt eval
+    model_path = download_model("Unbabel/wmt22-comet-da")  # Download the evaluation model
+    model = load_from_checkpoint(model_path)  # Load the model used for mt eval
     data = [{"src": row["src"], "mt": row["mt"], "ref": row["tgt"]} for idx, row in mt_df.iterrows()]
-    model_output = model.predict(data, batch_size=32, gpus=1) # Compute evaluations for each sentence
-    return model_output.system_score # Return a combined averaged score across all examples [0, 1]
+    model_output = model.predict(data, batch_size=32, gpus=1)  # Compute evaluations for each sentence
+    return model_output.system_score  # Return a combined averaged score across all examples [0, 1]
 
     ## Evaluation can also be done using the evaluate package
     # from evaluate import load
@@ -497,7 +499,7 @@ def build_eval_dataset(data_set_name: str) -> Dict[str, List[Tuple[List[str]]]]:
     tgt_data = util.read_corpus("eng", data_set_name, is_tgt=True)
     eval_data_dict["DeuEng"] = list(zip(src_data, tgt_data))
 
-    eval_data_dict["data_set_name"] = data_set_name # Add identifying name to data set eval dict
+    eval_data_dict["data_set_name"] = data_set_name  # Add identifying name to data set eval dict
 
     return eval_data_dict
 
@@ -530,15 +532,15 @@ def generate_mt_df(model: NMT, eval_data: List[Tuple[List[str]]], kwargs: dict =
     kwargs = {} if kwargs is None else kwargs
     # Record the outputs for each translation i.e. the source sentence (src), the target sentence (tgt) i.e.
     # the translation provided in the data set and the model translation (machine translation = mt)
-    chunks = [] # Create DataFrame chuncks that will be concatenated at the end
+    chunks = []  # Create DataFrame chunks that will be concatenated at the end
     for src_sents, tgt_sents in util.batch_iter(eval_data, batch_size=32, shuffle=False):
         chunk = pd.DataFrame(columns=["src", "tgt", "mt"])
-        chunk["src"] = [util.tokens_to_str(s) for s in src_sents] # Record the input source sentences
-        chunk["tgt"] = [util.tokens_to_str(s) for s in tgt_sents] # Record the output target sentences
+        chunk["src"] = [util.tokens_to_str(s) for s in src_sents]  # Record the input source sentences
+        chunk["tgt"] = [util.tokens_to_str(s) for s in tgt_sents]  # Record the output target sentences
         # Run the input source sentences through the model and generate machine translations
-        mt = model.translate(src_sents, tokenized=True, **kwargs) # eval_data has pre-tokenized sentences
-        chunk["mt"] = [util.tokens_to_str(x[0]) for x in mt] # Record the decoded sentences
-        chunks.append(chunk) # Add to the list of dataframe chuncks, one for each batch
+        mt = model.translate(src_sents, tokenized=True, **kwargs)  # eval_data has pre-tokenized sentences
+        chunk["mt"] = [util.tokens_to_str(x[0]) for x in mt]  # Record the decoded sentences
+        chunks.append(chunk)  # Add to the list of dataframe chunks, one for each batch
     return pd.concat(chunks)  # Concatenate all the df chunks together and return
 
 
@@ -587,7 +589,7 @@ def generate_model_eval_summary(model: NMT, eval_data: List[Tuple[List[str]]],
         list of sub-word tokens.
     cached_dset_name : str, optional
         If not None, then a data set name should be provided and will be used to read in cached model
-        predictions and target comparsions from cache instead of using eval_data. If left as None or the
+        predictions and target comparisons from cache instead of using eval_data. If left as None or the
         cached predictions cannot be loaded, then new model predictions will be computed on-the-fly.
         A cached mt_df will be attempted to be read in from:
             model_pred/{model.lang_pair}/{model.name}/{cached_dset_name}.csv
@@ -601,10 +603,10 @@ def generate_model_eval_summary(model: NMT, eval_data: List[Tuple[List[str]]],
     lang_pair = model.lang_pair[0].capitalize() + model.lang_pair[1].capitalize()
     mt_df = None
     if cached_dset_name is not None:  # Attempt to read in mt_df from the cached location
-        try: # Try reading in the CSV file containing the mt_df for this data set
+        try:  # Try reading in the CSV file containing the mt_df for this data set
             mt_df = pd.read_csv(f"model_pred/{lang_pair}/{model.name}/{cached_dset_name}.csv")
             print(f"Using {model.name} {lang_pair} {cached_dset_name} cached predictions")
-        except: # Report if it cannot be done, mt_df remains None
+        except:  # Report if it cannot be done, mt_df remains None
             print(f"Cached mt_df for {model.name} {lang_pair} {cached_dset_name} could not be read")
     if mt_df is None:  # If unable to be read from cache or read_cache_pred is None, compute now on-the-fly
         mt_df = generate_mt_df(model, eval_data)
@@ -648,7 +650,7 @@ def generate_model_summary_table(model_classes: List[str], data_set_name: str) -
     summary_table : pd.DataFrame
         A comparative performance summary across models.
     """
-    eval_data_dict = build_eval_dataset(data_set_name) # Build the tokenized sub-word lists for each sentence
+    eval_data_dict = build_eval_dataset(data_set_name)  # Build the tokenized sub-word lists for each sentence
     # which is a dictionary containing the dataset to be used for automatic model evaluation. The keys of the
     # dict should be "EngDeu" and "DeuEng" for the 2 directions of translation and the values should be a list
     # of parallel sentence tuples (src_sentence, tgt_sentence) where each sentence is recorded as a list of
@@ -660,40 +662,41 @@ def generate_model_summary_table(model_classes: List[str], data_set_name: str) -
                                      [("DeuEng", x) for x in metrics] + [("EngDeu", x) for x in metrics])
     summary_table = pd.DataFrame(index=model_classes, columns=cols)
 
-    for model_class in tqdm(model_classes, ncols=75): # Try to generate data for this model if possible
+    for model_class in tqdm(model_classes, ncols=75):  # Try to generate data for this model if possible
         for (src_lang, tgt_lang) in [("deu", "eng"), ("eng", "deu")]:
             lang_pair = f"{src_lang.capitalize()}{tgt_lang.capitalize()}"
             model_save_dir = util.get_model_save_dir(model_class, src_lang, tgt_lang, False)
-            if os.path.exists(f"{model_save_dir}/model.bin"): # Check if there is a model saved in this dir
+            if os.path.exists(f"{model_save_dir}/model.bin"):  # Check if there is a model saved in this dir
                 model = getattr(all_models, model_class).load(f"{model_save_dir}/model.bin")  # Load model
                 summary_table.loc[model_class, ("Model", "Embed Size")] = model.embed_size  # Record e size
                 summary_table.loc[model_class, ("Model", "Hidden Size")] = model.hidden_size  # Record h size
-                col = ("Model", "Total Params") # Record the number of trainable parameters in the model
+                col = ("Model", "Total Params")  # Record the number of trainable parameters in the model
                 summary_table.loc[model_class, col] = util.count_trainable_parameters(model)
                 # Compute automatic performance metrics for this model using the eval data set
                 model_smry = generate_model_eval_summary(model, eval_data_dict[lang_pair], data_set_name)
-                for eval_metric, metric_score in model_smry.items(): # Add each computed metric score to the
+                for eval_metric, metric_score in model_smry.items():  # Add each computed metric score to the
                     # summary df using the multi-index
                     summary_table.loc[model_class, (lang_pair, eval_metric)] = metric_score
 
-            elif model_class == "Google_API": # Handle this case separately, evaluate the Google Translate API
+            elif model_class == "Google_API":  # Handle this separately, evaluate the Google Translate API
                 # outputs and add them to the summary table using the same eval metrics
                 summary_table.loc[model_class, ("Model", "Embed Size")] = np.nan
                 summary_table.loc[model_class, ("Model", "Hidden Size")] = np.nan
                 summary_table.loc[model_class, ("Model", "Total Params")] = np.nan
-                model = all_models.Google_API(src_lang, tgt_lang) # Load in the model
+                model = all_models.Google_API(src_lang, tgt_lang)  # Load in the model
                 model_smry = generate_model_eval_summary(model, eval_data_dict[lang_pair], data_set_name)
-                for eval_metric, metric_score in model_smry.items(): # Add each computed metric score to the
+                for eval_metric, metric_score in model_smry.items():  # Add each computed metric score to the
                     # summary df using the multi-index
-                    if eval_metric == "Perplexity": # NaN out the perplexity values from the Google API eval
+                    if eval_metric == "Perplexity":  # NaN out the perplexity values from the Google API eval
                         summary_table.loc[model_class, (lang_pair, eval_metric)] = np.nan
-                    else: # If not perplexity, record the eval metric score as-is
+                    else:  # If not perplexity, record the eval metric score as-is
                         summary_table.loc[model_class, (lang_pair, eval_metric)] = metric_score
 
             else:  # If this model cannot be located, print a notification and move to the next one
                 print(f"No {lang_pair} model found for {model_class}")
 
     return summary_table
+
 
 ############################
 ### Qualitative Analysis ###
@@ -749,10 +752,11 @@ if __name__ == "__main__":
 
     import argparse
     import nltk
+
     # Make sure the download the things we need for model evaluation
     nltk.download('wordnet')  # Used for synonym matching
     nltk.download('omw-1.4')  # For multilingual WordNet, including German and English
-    nltk.download('punkt')    # For tokenization in various languages
+    nltk.download('punkt')  # For tokenization in various languages
     nltk.download('punkt_tab')
 
     parser = argparse.ArgumentParser(description='Run model evaluation pipeline')
@@ -760,7 +764,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
     data_set_name = args.data_set_name
 
-    model_classes = all_models.MODELS # Use all the models listed in all_models
+    model_classes = all_models.MODELS  # Use all the models listed in all_models
     # ['Fwd_RNN', 'LSTM_Att', 'EDTM', 'Google_API'] # All the models to evaluate
     # model_classes = ['Google_API']
 
@@ -768,8 +772,8 @@ if __name__ == "__main__":
     print(f"Running model evaluation for {model_classes} using dataset={data_set_name}")
     start_time = time.time()
     summary_table = generate_model_summary_table(model_classes, data_set_name)
-    os.makedirs(os.path.join(BASE_PATH, "eval_tables"), exist_ok=True) # Ensure this folder exists
+    os.makedirs(os.path.join(BASE_PATH, "eval_tables"), exist_ok=True)  # Ensure this folder exists
     summary_table.to_csv(f"eval_tables/{data_set_name}_eval.csv")  # Save the computed results
     print(f"\nSummary Table for Dataset={data_set_name}")
     print(summary_table)
-    print(f"Runtime: {time.time() - start_time:.2f}") # Report how long it took to run in total
+    print(f"Runtime: {time.time() - start_time:.2f}")  # Report how long it took to run in total
