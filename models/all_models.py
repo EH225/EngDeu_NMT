@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """
-Imports all models into 1 module for quick access and reference.
+This module imports all translation model classes into 1 module for quick access and reference and also
+provides a useful load_model utility function.
 """
 import os, sys
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
@@ -13,7 +14,8 @@ from models.LSTM_AttNN import LSTM_AttNN
 from models.Google_API import Google_API
 from models.EDTM import EDTM
 
-MODELS = ["Fwd_RNN", "LSTM_Att", "EDTM", "Google_API"] # List the models to be used from this module
+MODELS = ["Fwd_RNN", "LSTM_Att", "EDTM", "Google_API"]  # List the models to be used from this module
+
 
 def load_model(model_class: str, src_lang: str, tgt_lang: str):
     """
@@ -36,13 +38,16 @@ def load_model(model_class: str, src_lang: str, tgt_lang: str):
     model : Optional[NMT]
         Loads and returns the model instance saved to disk or None if it cannot be located.
     """
+    allowed_lang = ['eng', 'deu']
+    assert src_lang in allowed_lang, f"src_lang must be one of: {allowed_lang}, got {src_lang}"
+    assert tgt_lang in allowed_lang, f"tgt_lang must be one of: {allowed_lang}, got {tgt_lang}"
     assert src_lang != tgt_lang, f"Source and target language must be different, got {src_lang}, {tgt_lang}"
     translation_name = f"{src_lang.capitalize()}{tgt_lang.capitalize()}"
     model_save_dir = util.get_model_save_dir(model_class, src_lang, tgt_lang, False)
 
-    if os.path.exists(f"{model_save_dir}/model.bin"): # Check if there is a model saved in this dir
+    if os.path.exists(f"{model_save_dir}/model.bin"):  # Check if there is a model saved in this dir
         model = globals()[model_class].load(f"{model_save_dir}/model.bin")  # Load the model
-    elif model_class == "Google_API": # Handle special case for this model wihch doesn't have saved weights
+    elif model_class == "Google_API":  # Handle special case for this model wihch doesn't have saved weights
         model = globals()[model_class](src_lang, tgt_lang)
     else:
         print(f"No {model_class} {translation_name} saved model on disk")

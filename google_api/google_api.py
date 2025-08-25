@@ -1,8 +1,10 @@
 # -*- coding: utf-8 -*-
-
-### Package imports
+"""
+This module passes the input sentences for both languages from a particular data set (e.g. validation) to
+the Google Translate API and records the output translations by writing them to disk as a csv.
+"""
 import os, sys
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname( __file__ ), '..')))
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from util import read_corpus, tokens_to_str, tokenize_sentences
 from google.cloud import translate_v2 as translate
 from typing import List
@@ -10,13 +12,14 @@ import math
 from tqdm import tqdm
 import pandas as pd
 
+
 # Credentials are saved to: C:\Users\<USER>\AppData\Roaming\gcloud\application_default_credentials.json
 
 def google_translate(src_sentences: List[str], src_lang: str, tgt_lang: str,
                      batch_size: int = 32) -> List[str]:
     """
-    Calls the Google translate API to translate a list of input source sentences (src_sentences) passed as
-    as list of strings. src_lang and tgt_lang must also be specified as either "eng" or "deu".
+    Calls the Google Translate API to translate a list of input source sentences (src_sentences) passed as
+    list of strings. src_lang and tgt_lang must also be specified as either "eng" or "deu".
 
     Example usage:
         deu_sentences = ['Wo ist die Bank?', 'Was hast du gesagt?', 'Guten Tag.',
@@ -37,7 +40,7 @@ def google_translate(src_sentences: List[str], src_lang: str, tgt_lang: str,
     tgt_lang : str
         The abbreviation of the target language e.g. "eng" or "deu".
     batch_size : int
-        The number of sentences to pass to the Google translate API at once.
+        The number of sentences to pass to the Google Translate API at once.
 
     Returns
     -------
@@ -51,13 +54,13 @@ def google_translate(src_sentences: List[str], src_lang: str, tgt_lang: str,
     src_lang = "en" if src_lang == "eng" else "de"
     tgt_lang = "en" if tgt_lang == "eng" else "de"
     if isinstance(src_sentences, str):
-        src_sentences = [src_sentences] # Convert to a list
+        src_sentences = [src_sentences]  # Convert to a list
 
-    translate_client = translate.Client() # Launch the API client instance using the default login params
-    results = [] # Aggregate the results into 1 list
-    n = len(src_sentences) # The number of sentences to be processed
+    translate_client = translate.Client()  # Launch the API client instance using the default login params
+    results = []  # Aggregate the results into 1 list
+    n = len(src_sentences)  # The number of sentences to be processed
 
-    n_batches = math.ceil(n / batch_size) # How many total batches to iter over the whole data set
+    n_batches = math.ceil(n / batch_size)  # How many total batches to iter over the whole data set
     for i in tqdm(range(n_batches), ncols=75):
         # Process the input data in batches so that we don't overwhelm the API
         batch = src_sentences[i * batch_size: (i + 1) * batch_size]
@@ -69,7 +72,7 @@ def google_translate(src_sentences: List[str], src_lang: str, tgt_lang: str,
 
 def translate_corpus(dataset_name: str, save_dir: str = "google_api") -> None:
     """
-    Reads in the Eng and Deu versions of a data set and passes the sentences through the Google translate API
+    Reads in the Eng and Deu versions of a data set and passes the sentences through the Google Translate API
     to generate state-of-the-art (SOTA) translations for comparison vs other models in this project.
 
     Parameters
@@ -111,7 +114,7 @@ def translate_corpus(dataset_name: str, save_dir: str = "google_api") -> None:
 
 
 if __name__ == "__main__":
-    pass # Use with caution, we are limited in how much we can use of the API
+    pass  # Use with caution, we are limited in how much we can use of the API
     # translate_corpus("train_debug")
     # translate_corpus("validation")
     # translate_corpus("test")
