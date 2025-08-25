@@ -36,7 +36,7 @@ if __name__ == "__main__":
     print(f"Model predictions will be made using the {device}\n")
 
     for data_set_name in data_set_names: # Generate predictions for all data sets
-        print(f"Working on data set: {data_set_name}")
+        print(f"\nWorking on data set: {data_set_name}")
         eval_data_dict = model_eval.build_eval_dataset(data_set_name)
         for model_class in all_models.MODELS: # Generate predictions for all models
             for (src_lang, tgt_lang) in [("deu", "eng"), ("eng", "deu")]:
@@ -52,3 +52,39 @@ if __name__ == "__main__":
                 mt_df.to_csv(os.path.join(save_dir, f"{data_set_name}.csv"), index=False)
                 print(f"Saved mt_df predictions for {model_class} ({t}) - {lang_pair} to: {save_dir}")
 
+""" SAMPLE CONSOLE OUTPUT:
+
+Generating predictions using beam search
+kwargs: {'beam_size': 5}
+Model predictions will be made using the cpu
+
+Working on data set: train_debug
+Saved mt_df predictions for Fwd_RNN (258.3s) - DeuEng to: model_pred/DeuEng/Fwd_RNN/
+Saved mt_df predictions for Fwd_RNN (343.6s) - EngDeu to: model_pred/EngDeu/Fwd_RNN/
+Saved mt_df predictions for LSTM_Att (416.0s) - DeuEng to: model_pred/DeuEng/LSTM_Att/
+Saved mt_df predictions for LSTM_Att (367.7s) - EngDeu to: model_pred/EngDeu/LSTM_Att/
+Saved mt_df predictions for EDTM (1725.6s) - DeuEng to: model_pred/DeuEng/EDTM/
+Saved mt_df predictions for EDTM (1811.7s) - EngDeu to: model_pred/EngDeu/EDTM/
+Saved mt_df predictions for Google_API (2.9s) - DeuEng to: model_pred/DeuEng/Google_API/
+Saved mt_df predictions for Google_API (2.6s) - EngDeu to: model_pred/EngDeu/Google_API/
+
+Working on data set: validation
+Saved mt_df predictions for Fwd_RNN (343.7s) - DeuEng to: model_pred/DeuEng/Fwd_RNN/
+Saved mt_df predictions for Fwd_RNN (303.5s) - EngDeu to: model_pred/EngDeu/Fwd_RNN/
+Saved mt_df predictions for LSTM_Att (334.5s) - DeuEng to: model_pred/DeuEng/LSTM_Att/
+Saved mt_df predictions for LSTM_Att (323.4s) - EngDeu to: model_pred/EngDeu/LSTM_Att/
+Saved mt_df predictions for EDTM (1498.3s) - DeuEng to: model_pred/DeuEng/EDTM/
+Saved mt_df predictions for EDTM (1514.5s) - EngDeu to: model_pred/EngDeu/EDTM/
+Saved mt_df predictions for Google_API (2.8s) - DeuEng to: model_pred/DeuEng/Google_API/
+Saved mt_df predictions for Google_API (2.6s) - EngDeu to: model_pred/EngDeu/Google_API/
+
+Working on data set: test
+Saved mt_df predictions for Fwd_RNN (359.5s) - DeuEng to: model_pred/DeuEng/Fwd_RNN/
+Saved mt_df predictions for Fwd_RNN (334.6s) - EngDeu to: model_pred/EngDeu/Fwd_RNN/
+Saved mt_df predictions for LSTM_Att (376.1s) - DeuEng to: model_pred/DeuEng/LSTM_Att/
+Saved mt_df predictions for LSTM_Att (386.3s) - EngDeu to: model_pred/EngDeu/LSTM_Att/
+Saved mt_df predictions for EDTM (1510.3s) - DeuEng to: model_pred/DeuEng/EDTM/
+Saved mt_df predictions for EDTM (1614.7s) - EngDeu to: model_pred/EngDeu/EDTM/
+Saved mt_df predictions for Google_API (2.8s) - DeuEng to: model_pred/DeuEng/Google_API/
+Saved mt_df predictions for Google_API (2.6s) - EngDeu to: model_pred/EngDeu/Google_API/
+"""
