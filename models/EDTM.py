@@ -15,7 +15,6 @@ import torch.nn as nn
 import torch.nn.utils
 import torch.nn.functional as F
 import math, logging
-
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from models.util import NMT
 from vocab.vocab import Vocab
@@ -970,8 +969,8 @@ class EDTM(NMT):
 
         max_decode_lengths specifies the max length of the translation output for each input sentence. If an
         integer is provided, then that value is applied to all sentences. If not specified, then the default
-        value will be len(src_sentence) * 2.5 for each src_sentence in src_sentences. The values of
-        max_decode_lengths are capped at 250 globally.
+        value will be max(len(src_sentence) * 2, 10) for each src_sentence in src_sentences. The values of
+        max_decode_lengths are capped at 1000 globally.
 
         Set tokenized = False if src_sentences is passed as a list of sentence strings or True if they have
         already been tokenized into list of sub-word tokens. The returned output will match the input i.e.
@@ -998,8 +997,8 @@ class EDTM(NMT):
         max_decode_lengths : Union[List[int], int], optional
             The max number of time steps to run the decoder unroll sequence for each input sentence. The
             output machine translation produced for each sentence will be capped in length to a certain
-            amount of sub-word tokens specified here. The default is 2.5 * len(src_sentence) and all values
-            must be <= 250.
+            amount of sub-word tokens specified here. The default is max(len(src_sentence) * 2, 10) for each
+            source sentence and all values are capped at <= 1000.
         tokenized : bool, optional
             Denotes whether src_sentences has already been tokenized.
 
@@ -1032,14 +1031,14 @@ class EDTM(NMT):
         assert isinstance(beam_size, int) and 0 < beam_size <= 5, msg
         if k_pct is not None:  # If not None, then perform data-validation
             assert 0 < k_pct <= 1.0, "k_pct must be in (0, 1] if not None"
-        if max_decode_lengths is None:  # Default to allow for 250% more words per sentence if not specified
-            max_decode_lengths = [int(len(s) * 2.5) for s in src_sentences]
+        if max_decode_lengths is None:  # Default to allow for 200% more words or at least 10 if not provided
+            max_decode_lengths = [max(len(s) * 2, 10) for s in src_sentences]
         if isinstance(max_decode_lengths, int):  # Convert to a list if provided as an int
             max_decode_lengths = [max_decode_lengths for i in range(b)]
         max_decode_lengths = max_decode_lengths.copy()  # Copy to avoid mutation
-        for i, n in enumerate(max_decode_lengths):  # Check all are integer valued and capped at 250
+        for i, n in enumerate(max_decode_lengths):  # Check all are integer valued and capped at 1000
             assert isinstance(n, int) and n > 0, "All max_decode_lengths must be integers > 0"
-            max_decode_lengths[i] = min(n, 250)
+            max_decode_lengths[i] = min(n, 1000)
 
         msg = "src_sentences and max_decode_lengths must be the same length"
         assert len(max_decode_lengths) == len(src_sentences), msg
@@ -1071,9 +1070,9 @@ class EDTM(NMT):
             if beam_size == 1:  # Proceed with greedy search
                 mt = self._greedy_search(enc_hiddens, enc_masks, k_pct, max_decode_lengths)
             else:  # Otherwise, utilize beam search to generate output translations
-                mt = [
-                    self._beam_search(enc_hiddens[i, :, :], enc_masks[i, :], beam_size, max_decode_lengths[i])
-                    for i, src_s in enumerate(src_sentences)]
+                mt = [self._beam_search(enc_hiddens[i, :, :], enc_masks[i, :], beam_size,
+                                        max_decode_lengths[i])
+                      for i, src_s in enumerate(src_sentences)]
 
         if tokenized is False:  # Convert the outputs into concatenated sentences to match the input format
             mt = [[util.tokens_to_str(x[0]), x[1]] for x in mt]  # Convert each to a string sentence
