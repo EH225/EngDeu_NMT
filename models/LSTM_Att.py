@@ -428,7 +428,7 @@ class LSTM_Att(NMT):
 
     def translate(self, src_sentences: Union[List[str], List[List[str]]], beam_size: int = 1,
                   k_pct: float = 0.1, max_decode_lengths: Union[List[int], int] = None,
-                  tokenized: bool = True) -> List[List[Union[Union[str, List[str]], float]]]:
+                  tokenized: bool = True) -> List[List[Union[Union[str, List[str]], float, pd.DataFrame]]]:
         """
         Given a list of source sentences (either a list of strings or a list of sub-word tokens), this method
         generates output translations using either greedy search (if beam_size == 1) or beam search (if
@@ -569,7 +569,8 @@ class LSTM_Att(NMT):
         return mt
 
     def _greedy_search(self, enc_hiddens: torch.Tensor, enc_masks: torch.Tensor, dec_init_state: torch.Tensor,
-                       k_pct: float, max_decode_lengths: List[int]) -> List[List[Union[List[str], float]]]:
+                       k_pct: float, max_decode_lengths: List[int]
+                       ) -> List[List[Union[List[str], float, torch.Tensor]]]:
         """
         This method performs greedy search on the input source sentences provided (enc_hiddens) using a given
         k-percent cutoff (k_pct). This method is built to be called only within the translate() method.
@@ -692,7 +693,7 @@ class LSTM_Att(NMT):
 
     def _beam_search(self, enc_hiddens: torch.Tensor, enc_masks: torch.Tensor, dec_init_state: torch.Tensor,
                      beam_size: int, max_decode_length: int,
-                     alpha: float = 0.8) -> List[Union[List[str], float]]:
+                     alpha: float = 0.8) -> List[Union[List[str], float, torch.Tensor]]:
         """
         This method performs beam search on the input source sentence provided (enc_hiddens) using a given
         beam size (beam_size). This method is built to be called only within the translate() method.

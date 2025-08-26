@@ -455,7 +455,7 @@ class LSTM_AttNN(NMT):
         step. k_pct must be a float value (0, 1]. E.g. if the most likely work token has a prob of 50% and
         k_pct = 10%, then it will be selected with probability 100%. If instead the top 2 most probably tokens
         have probs of 7% and 5% respectively, then the next token will be sampled from just those 2 with more
-        of a chance given the the first due to it's higher relative probability.
+        of a chance given the first due to its higher relative probability.
 
         max_decode_lengths specifies the max length of the translation output for each input sentence. If an
         integer is provided, then that value is applied to all sentences. If not specified, then the default
