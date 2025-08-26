@@ -65,7 +65,7 @@ class LSTM_AttNN(NMT):
         self.target_embeddings = nn.Embedding(num_embeddings=len(vocab.tgt), embedding_dim=embed_size,
                                               padding_idx=vocab.tgt['<pad>'])
 
-        # This is the bi-directional LSTM encoder that takes in the word embedding for each input word of the
+        # This is the bidirectional LSTM encoder that takes in the word embedding for each input word of the
         # source language (each of size embed_size) and outputs a hidden state vector of size hidden_size and
         # a cell memory vector (also of size hidden_size)
         self.encoder = nn.LSTM(input_size=embed_size, hidden_size=hidden_size, num_layers=1, bias=True,
@@ -73,7 +73,7 @@ class LSTM_AttNN(NMT):
 
         # This is the LSTM decoder section of the model that is one-directional since it is making the y_hats
         # Takes in the word embedding of the prior predicted output word and rolls the prediction forward to
-        # produce the predicted translation in the output language. This layer cannot be bi-directional since
+        # produce the predicted translation in the output language. This layer cannot be bidirectional since
         # we make y-hat predictions sequentially from left-to-right. The inputs are a concatenation of the
         # word embedding of the prior predicted word and the final context vector from the encoder
         # The inputs are a concatenated vector of the input word y_t and the prior hidden state
@@ -139,7 +139,7 @@ class LSTM_AttNN(NMT):
         """
         enc_masks = torch.zeros(enc_hiddens.size(0), enc_hiddens.size(1), dtype=torch.float)
         for e_id, src_len in enumerate(source_lengths):
-            enc_masks[e_id, src_len:] = 1  # Set the padding word tokens to have 1s rather thans 0s
+            enc_masks[e_id, src_len:] = 1  # Set the padding word tokens to have 1s rather than 0s
         return enc_masks.to(self.device)
 
     def forward(self, source: List[List[str]], target: List[List[str]], eps: float = 0.0) -> torch.Tensor:
@@ -180,7 +180,7 @@ class LSTM_AttNN(NMT):
         target_padded = self.vocab.tgt.to_input_tensor(target, device=self.device)  # Tensor (b, tgt_len)
 
         # Call the encoder on the padded source sentences, get the initialization of the decoder hidden state
-        # enc_hiddens is (b, src_len, h*2) for the bi-directional hidden state of each word in each sentence
+        # enc_hiddens is (b, src_len, h*2) for the bidirectional hidden state of each word in each sentence
         # from the encoder, dec_init_state is a length 2 tuple containing (b, h) and (b, h) for the initial
         # states of the decoder hidden and decoder cell
         enc_hiddens, dec_init_state = self.encode(source_padded, source_lengths)
@@ -338,7 +338,7 @@ class LSTM_AttNN(NMT):
 
         # Use the torch.split function to iterate over the time dimension of Y, this will give us Y_t which
         # is a tensor of size (1, b, e) i.e. the word embedding of the ith target word from each sentence
-        for Y_t in torch.split(tensor=Y, split_size_or_sections=1, dim=1):  # Spling along dim=1 i.e. iter
+        for Y_t in torch.split(tensor=Y, split_size_or_sections=1, dim=1):  # Split along dim=1 i.e. iter
             # over words in each sentence
             Y_t = torch.squeeze(Y_t, dim=1)  # Squeeze Y_t into (b, e). i.e. remove the 2nd dim
             # Construct Ybar_t by concatenating Y_t with o_prev on their last dimension, Y_t is (b, e) and
