@@ -15,6 +15,7 @@ import torch.nn as nn
 import torch.nn.utils
 import torch.nn.functional as F
 import math, logging
+
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from models.util import NMT
 from vocab.vocab import Vocab
@@ -969,8 +970,8 @@ class EDTM(NMT):
 
         max_decode_lengths specifies the max length of the translation output for each input sentence. If an
         integer is provided, then that value is applied to all sentences. If not specified, then the default
-        value will be len(src_sentence) * 1.2 for each src_sentence in src_sentences. The values of
-        max_decode_lengths are capped at 200 globally.
+        value will be len(src_sentence) * 2.5 for each src_sentence in src_sentences. The values of
+        max_decode_lengths are capped at 250 globally.
 
         Set tokenized = False if src_sentences is passed as a list of sentence strings or True if they have
         already been tokenized into list of sub-word tokens. The returned output will match the input i.e.
@@ -997,7 +998,7 @@ class EDTM(NMT):
         max_decode_lengths : Union[List[int], int], optional
             The max number of time steps to run the decoder unroll sequence for each input sentence. The
             output machine translation produced for each sentence will be capped in length to a certain
-            amount of sub-word tokens specified here. The default is 1.2 * len(src_sentence) and all values
+            amount of sub-word tokens specified here. The default is 2.5 * len(src_sentence) and all values
             must be <= 250.
         tokenized : bool, optional
             Denotes whether src_sentences has already been tokenized.
@@ -1018,7 +1019,7 @@ class EDTM(NMT):
         Returns a list of hypotheses i.e. length 2 lists each containing:
             - The predicted translation from the model as either a string (if tokenize is True) or a
               list of sub-word tokens (if tokenize is False).
-            -  negative log-likelihood score of the decoding as a float
+            - The negative log-likelihood score of the decoding as a float
         """
         b = len(src_sentences)  # Record how many input sentences there are i.e. the batch size
         assert b > 0, "len(src_sentences) must be >= 1"
@@ -1031,8 +1032,8 @@ class EDTM(NMT):
         assert isinstance(beam_size, int) and 0 < beam_size <= 5, msg
         if k_pct is not None:  # If not None, then perform data-validation
             assert 0 < k_pct <= 1.0, "k_pct must be in (0, 1] if not None"
-        if max_decode_lengths is None:  # Default to allow for 20% more words per sentence if not specified
-            max_decode_lengths = [int(len(s) * 1.2) for s in src_sentences]
+        if max_decode_lengths is None:  # Default to allow for 250% more words per sentence if not specified
+            max_decode_lengths = [int(len(s) * 2.5) for s in src_sentences]
         if isinstance(max_decode_lengths, int):  # Convert to a list if provided as an int
             max_decode_lengths = [max_decode_lengths for i in range(b)]
         max_decode_lengths = max_decode_lengths.copy()  # Copy to avoid mutation

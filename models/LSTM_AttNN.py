@@ -459,8 +459,8 @@ class LSTM_AttNN(NMT):
 
         max_decode_lengths specifies the max length of the translation output for each input sentence. If an
         integer is provided, then that value is applied to all sentences. If not specified, then the default
-        value will be len(src_sentence) * 1.2 for each src_sentence in src_sentences. The values of
-        max_decode_lengths are capped at 200 globally.
+        value will be len(src_sentence) * 2.5 for each src_sentence in src_sentences. The values of
+        max_decode_lengths are capped at 250 globally.
 
         Set tokenized = False if src_sentences is passed as a list of sentence strings or True if they have
         already been tokenized into list of sub-word tokens. The returned output will match the input i.e.
@@ -487,7 +487,7 @@ class LSTM_AttNN(NMT):
         max_decode_lengths : Union[List[int], int], optional
             The max number of time steps to run the decoder unroll sequence for each input sentence. The
             output machine translation produced for each sentence will be capped in length to a certain
-            amount of sub-word tokens specified here. The default is 1.2 * len(src_sentence) and all values
+            amount of sub-word tokens specified here. The default is 2.5 * len(src_sentence) and all values
             must be <= 250.
         tokenized : bool, optional
             Denotes whether src_sentences has already been tokenized.
@@ -508,7 +508,7 @@ class LSTM_AttNN(NMT):
         Returns a list of hypotheses i.e. length 2 lists each containing:
             - The predicted translation from the model as either a string (if tokenize is True) or a
               list of sub-word tokens (if tokenize is False).
-            -  negative log-likelihood score of the decoding as a float
+            - The negative log-likelihood score of the decoding as a float
         """
         b = len(src_sentences)  # Record how many input sentences there are i.e. the batch size
         assert b > 0, "len(src_sentences) must be >= 1"
@@ -521,8 +521,8 @@ class LSTM_AttNN(NMT):
         assert isinstance(beam_size, int) and 0 < beam_size <= 5, msg
         if k_pct is not None:  # If not None, then perform data-validation
             assert 0 < k_pct <= 1.0, "k_pct must be in (0, 1] if not None"
-        if max_decode_lengths is None:  # Default to allow for 20% more words per sentence if not specified
-            max_decode_lengths = [int(len(s) * 1.2) for s in src_sentences]
+        if max_decode_lengths is None:  # Default to allow for 250% more words per sentence if not specified
+            max_decode_lengths = [int(len(s) * 2.5) for s in src_sentences]
         if isinstance(max_decode_lengths, int):  # Convert to a list if provided as an int
             max_decode_lengths = [max_decode_lengths for i in range(b)]
         max_decode_lengths = max_decode_lengths.copy()  # Copy to avoid mutation
@@ -785,125 +785,6 @@ class LSTM_AttNN(NMT):
         complete_hypotheses.sort(key=lambda x: -x[0] / (len(x[1]) ** alpha))
         return [complete_hypotheses[0][1],
                 -complete_hypotheses[0][0]]  # (work_token_list, neg_log_likelihood)
-
-    def OLD(self, src_sentences: Union[List[str], List[List[str]]], k_pct: float = 0.1,
-            max_decode_lengths: Union[List[int], int] = None,
-            tokenized: bool = True) -> List[List[Union[Union[str, List[str]], float]]]:
-        ### FOR REFERENCE ONLY
-        b = len(src_sentences)  # Record how many input sentences there are i.e. the batch size
-        assert b > 0, "len(src_sentences) must be >= 1"
-        if tokenized is False:  # Convert the input sentences from strings to lists of subword strings
-            src_sentences = util.tokenize_sentences(src_sentences, self.lang_pair[0], is_tgt=False)
-        elif isinstance(src_sentences[0], str):  # If 1 sentence is passed in, then add an outer list wrapper
-            src_sentences = [src_sentences]  # Make src_sentences a list of lists
-            b = len(src_sentences)  # Redefine to be 1
-        if k_pct is not None:  # If not None, then perform data-validation
-            assert 0 < k_pct <= 1.0, "k_pct must be in (0, 1] if not None"
-        if max_decode_lengths is None:  # Default to allow for 20% more words per sentence if not specified
-            max_decode_lengths = [int(len(s) * 1.2) for s in src_sentences]
-        if isinstance(max_decode_lengths, int):  # Convert to a list if provided as an int
-            max_decode_lengths = [max_decode_lengths for i in range(b)]
-        max_decode_lengths = max_decode_lengths.copy()  # Copy to avoid mutation
-        for i, n in enumerate(max_decode_lengths):  # Check all are integer valued and capped at 250
-            assert isinstance(n, int) and n > 0, "All max_decode_lengths must be integers > 0"
-            max_decode_lengths[i] = min(n, 250)
-
-        msg = "src_sentences and max_decode_lengths must be the same length"
-        assert len(max_decode_lengths) == len(src_sentences), msg
-
-        # Figure out the sort order to arrange the sentences in decreasing length order
-        argsort_idx = np.argsort([len(s) for i, s in enumerate(src_sentences)])[::-1]
-        new_to_orig_idx = {int(x): i for i, x in enumerate(argsort_idx)}  # Reverse the mapping backwards
-        src_sentences = [src_sentences[idx] for idx in argsort_idx]  # Re-order by sentence length (desc)
-
-        with torch.no_grad():  # no_grad() signals backend to throw away all gradients
-
-            # Convert the input source sentence into a tensor object of size (b, src_len) of word indices
-            src_sentence_tensor = self.vocab.src.to_input_tensor(src_sentences, self.device)  # (b, src_len)
-
-            # Pass it through the encoder to generate the encoder hidden states for each word of each input
-            # sentence and also the decoder initial hidden state (h of t minus 1) for each sentence
-            enc_hiddens, dec_init_state = self.encode(src_sentence_tensor, [len(s) for s in src_sentences])
-            # enc_hiddens (b, src_len, h*2), dec_init_state is a tuple of 2 vectors each of size (b, h)
-
-            dec_state = dec_init_state  # Tuple((b, h), (b, h)) = (hidden, cell)
-            o_prev = torch.zeros(b, self.hidden_size, device=self.device)  # Initialize as all zeros (b, h)
-            enc_hiddens_proj = self.att_enc_hiddens_proj(enc_hiddens)  # Out: (b, src_len, h)
-
-            # (b, src_len) encode where the padding tokens are i.e. use 1s to denote right-padding
-            enc_masks = self.generate_sentence_masks(enc_hiddens, [len(s) for s in src_sentences])
-
-            # Create output translations for each input sentence, begin with the start-of-sentence begin
-            # token and also record the negative log likelihood of the sentence
-            mt = [[['<s>'], 0] for _ in range(b)]  # Machine translations
-
-            # Use the last output word Y_hat_(t-1) as the next input word (Y_t) going into the decoder, we
-            # always start with the <s> sentence start token for each output translation
-            Y_t = torch.tensor([self.vocab.tgt[mt[i][0][-1]] for i in range(b)],
-                               dtype=torch.long, device=self.device)  # (b, )
-
-            # Iterate until we've a complete output translations or we reach the max output len
-            finished = 0  # Track how many output translation sentences are finished
-            finished_flags = [0 for i in range(b)]  # Mark which sentences have been completed
-
-            while finished < b:  # Iterate until all output translations are finished generating
-                Y_t_embed = self.target_embeddings(Y_t)  # (b, embed_size) convert to a word vector
-
-                # Compute an updated hidden state using the last y_hat and the prior hidden state
-                Ybar_t = torch.cat(tensors=(Y_t_embed, o_prev), dim=1)  # (b, e + h)
-                dec_state, o_t, e_t = self.step(Ybar_t, dec_state, enc_hiddens, enc_hiddens_proj, enc_masks)
-                # dec_state is a length 2 tuple with (b, h) for the hidden state and cell state of the decoder
-                # at the current time-step for each sentence, o_t is (b, h), e_t is (b, src_len)
-
-                # Compute the log probabilities over all possible next target words using the last hidden
-                # layer i.e. the one that is to be fed to self.target_vocab_projection, gives us (b, |V|)
-                log_p_t = F.log_softmax(self.target_vocab_projection(o_t), dim=-1)  # (b, |V|)
-
-                if k_pct is None:  # Select the word with the highest modeled probability always
-                    # Find which word has the highest log prob for each sentence, idx = word_id in the vocab
-                    Y_hat_t = torch.argmax(log_p_t, dim=1)  # (b, ) the most probably next word_id for each
-                else:  # Randomly sample from the sub-words at or above the kth most probably percentile
-                    prob_t = torch.exp(log_p_t)  # Exponentiate to convert to a prob dist (b, |V|)
-                    # Find what cutoff is required to make it into the words that collectively sum to form
-                    # the top k percent of the probability distribution i.e. for a flat distribution there
-                    # will be more words, for a more concentrated distribution, there will be fewer words that
-                    # make the cut
-                    Y_hat_t = torch.zeros(b, dtype=int, device=self.device)  # Start off with all zeros
-                    for i in range(b):
-                        if finished_flags[i] == 0:  # Compute if this sentence is not already finished
-                            sorted_probs = prob_t[i, :].sort(descending=True)  # Sort the probs of this dist
-                            bool_vec = sorted_probs.values.cumsum(0) <= k_pct  # The entries in the top k %
-                            bool_vec[
-                                0] = True  # Always have at least 1 entry set to true i.e. this happens if
-                            # the most likely word has a higher prob than k
-                            idx, prob = sorted_probs.indices[bool_vec], sorted_probs.values[bool_vec]
-                            prob /= prob.sum()  # Re-normalize to 1 and then sample to get the next prediction
-                            Y_hat_t[i] = idx[prob.multinomial(num_samples=1, replacement=True).item()]
-                        # Else leave the word_id as 0 which defaults to the padding token
-
-                for i in range(b):  # Record the next predicted word for each output translation
-                    if finished_flags[i] == 0:  # Record if this sentence is not already finished
-                        mt[i][0].append(self.vocab.tgt.id2word[Y_hat_t[i].item()])
-                        mt[i][1] += -log_p_t[i, int(Y_hat_t[i].item())]  # Sum the log prob of y-hats
-                        # Check if the translation has been complete i.e. we got a sentence stop token or the
-                        # max decode length was reached for this sentence
-                        if mt[i][0][-1] == "</s>" or len(mt[i][0]) - 1 == max_decode_lengths[i]:
-                            # mt[i][0] is the list of output sub-word tokens, which beings with </s> for all
-                            # so it is already length 1, so we subtract 1 to trigger when the output tokens
-                            # added after </s> are max_decode_lengths[i]
-                            finished += 1  # Record that 1 more sentence was finished
-                            finished_flags[i] = 1  # Mark this sentence off as finished
-
-                # Update relevant state variables for next iteration
-                Y_t = Y_hat_t  # For next iter, set the current y_hat output as the next y (b, )
-                o_prev = o_t  # Update the combined outputs
-                # dec_state was already updated in the step above so we do not need to do anything further
-
-        # Re-order before returning to re-instate the original sentence ordering
-        mt = [mt[new_to_orig_idx[idx]] for idx in range(len(mt))]
-        if tokenized is False:  # Convert the outputs into concatenated sentences to match the input format
-            mt = [[util.tokens_to_str(x[0]), x[1]] for x in mt]  # Convert each to a string sentence
-        return mt
 
     def save(self, model_path: str, verbose: bool = False) -> None:
         """

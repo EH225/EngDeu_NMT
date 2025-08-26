@@ -11,6 +11,7 @@ from __future__ import annotations
 import sys, os
 from typing import List, Tuple, Dict, Set, Union
 import numpy as np
+import pandas as pd
 import torch
 import torch.nn as nn
 import torch.nn.utils
@@ -448,8 +449,8 @@ class LSTM_Att(NMT):
 
         max_decode_lengths specifies the max length of the translation output for each input sentence. If an
         integer is provided, then that value is applied to all sentences. If not specified, then the default
-        value will be len(src_sentence) * 1.2 for each src_sentence in src_sentences. The values of
-        max_decode_lengths are capped at 200 globally.
+        value will be len(src_sentence) * 2.5 for each src_sentence in src_sentences. The values of
+        max_decode_lengths are capped at 250 globally.
 
         Set tokenized = False if src_sentences is passed as a list of sentence strings or True if they have
         already been tokenized into list of sub-word tokens. The returned output will match the input i.e.
@@ -476,7 +477,7 @@ class LSTM_Att(NMT):
         max_decode_lengths : Union[List[int], int], optional
             The max number of time steps to run the decoder unroll sequence for each input sentence. The
             output machine translation produced for each sentence will be capped in length to a certain
-            amount of sub-word tokens specified here. The default is 1.2 * len(src_sentence) and all values
+            amount of sub-word tokens specified here. The default is 2.5 * len(src_sentence) and all values
             must be <= 250.
         tokenized : bool, optional
             Denotes whether src_sentences has already been tokenized.
@@ -497,7 +498,10 @@ class LSTM_Att(NMT):
         Returns a list of hypotheses i.e. length 2 lists each containing:
             - The predicted translation from the model as either a string (if tokenize is True) or a
               list of sub-word tokens (if tokenize is False).
-            -  negative log-likelihood score of the decoding as a float
+            - The negative log-likelihood score of the decoding as a float
+            - A pd.DataFrame that is of size (dec_steps, src_len) containing the attention scores at each
+              step with output predicted sub-word tokens as the row labels and the input sub-word tokens
+              as the columns.
         """
         b = len(src_sentences)  # Record how many input sentences there are i.e. the batch size
         assert b > 0, "len(src_sentences) must be >= 1"
@@ -510,8 +514,8 @@ class LSTM_Att(NMT):
         assert isinstance(beam_size, int) and 0 < beam_size <= 5, msg
         if k_pct is not None:  # If not None, then perform data-validation
             assert 0 < k_pct <= 1.0, "k_pct must be in (0, 1] if not None"
-        if max_decode_lengths is None:  # Default to allow for 20% more words per sentence if not specified
-            max_decode_lengths = [int(len(s) * 1.2) for s in src_sentences]
+        if max_decode_lengths is None:  # Default to allow for 250% more words per sentence if not specified
+            max_decode_lengths = [int(len(s) * 2.5) for s in src_sentences]
         if isinstance(max_decode_lengths, int):  # Convert to a list if provided as an int
             max_decode_lengths = [max_decode_lengths for i in range(b)]
         max_decode_lengths = max_decode_lengths.copy()  # Copy to avoid mutation
@@ -550,10 +554,18 @@ class LSTM_Att(NMT):
                                         beam_size, max_decode_lengths[i])
                       for i, src_s in enumerate(src_sentences)]
 
+        # Convert each attention score matrix into a pd.DataFrame and add column and row sub-word labels
+        # i.e. the rows will be labeled with the mt ouput tokens produced by the decoder at each time step and
+        # the columns will be labeled with the sub-word tokens of the input src_sentence fed into the encoder
+        for i, h in enumerate(mt):  # Apply to each of the output machine translation hypotheses
+            h[-1] = pd.DataFrame(h[-1], index=h[0][1:], columns=src_sentences[i])
+
         # Re-order before returning to re-instate the original sentence ordering
         mt = [mt[new_to_orig_idx[idx]] for idx in range(len(mt))]
+
         if tokenized is False:  # Convert the outputs into concatenated sentences to match the input format
             mt = [[util.tokens_to_str(x[0]), x[1]] for x in mt]  # Convert each to a string sentence
+
         return mt
 
     def _greedy_search(self, enc_hiddens: torch.Tensor, enc_masks: torch.Tensor, dec_init_state: torch.Tensor,
@@ -588,6 +600,7 @@ class LSTM_Att(NMT):
         Returns a list of hypotheses i.e. length 2 lists each containing:
             - The predicted translation from the model as a list of sub-word tokens
             - The negative log-likelihood score of the decoding as a float
+            - A torch.tensor that is of size (dec_steps, src_len) containing the attention scores at each step
         """
         b = enc_hiddens.shape[0]  # The batch_size of the inputs
         o_prev = torch.zeros(b, self.hidden_size, device=self.device)  # Initialize as all zeros (b, h)
@@ -608,12 +621,15 @@ class LSTM_Att(NMT):
         finished = 0  # Track how many output translation sentences are finished
         finished_flags = [0 for i in range(b)]  # Mark which sentences have been completed
 
+        att_scores = [] # Collect the attention scores of the model during greedy search
+
         while finished < b:  # Iterate until all output translations are finished generating
             Y_t_embed = self.target_embeddings(Y_t)  # (b, embed_size) convert to a word vector
 
             # Compute an updated hidden state using the last y_hat and the prior hidden state
             Ybar_t = torch.cat(tensors=(Y_t_embed, o_prev), dim=1)  # (b, e + h)
             dec_state, o_t, e_t = self.step(Ybar_t, dec_state, enc_hiddens, enc_hiddens_proj, enc_masks)
+            att_scores.append(e_t)  # Each is (batch_size, src_len), which we can concatentate together
             # dec_state is a length 2 tuple with (b, h) for the hidden state and cell state of the decoder
             # at the current time-step for each sentence, o_t is (b, h), e_t is (b, src_len)
 
@@ -659,6 +675,19 @@ class LSTM_Att(NMT):
             Y_t = Y_hat_t  # For next iter, set the current y_hat output as the next y (b, )
             o_prev = o_t  # Update the combined outputs
             # dec_state was already updated in the step above so we do not need to do anything further
+
+        # Combine the attention scores together at the end for this batch of inputs
+        att_scores = torch.concat([x.unsqueeze(1) for x in att_scores], dim=1)  # (batch, dec_step, src_len)
+        # Convert to a list of attention score tensors each of size (T, src_len) where T = decode steps and
+        # also apply the softmax normalization to each along the last dimension to turn them into prob
+        # distributions from [0, 1] across the encoder inputs
+        att_scores = [F.softmax(att_scores[i, ...], dim=-1) for i in range(len(att_scores))]
+        # Truncate the attention score tensors to exclude padding tokens used to make the batch of sentences
+        # equal length for processing. Also truncate the attention score tensors to exclude time steps beyond
+        # the mt output sequence length minus 1 since there are (n-1) timesteps after <s> to generate the mt
+        att_scores = [x[:(len(mt[i][0]) - 1), enc_masks[i, :]==0] for i, x in enumerate(att_scores)]
+        for i, x in enumerate(mt):  # Add the attention score tensor to each hypothesis before returning
+            x.append(att_scores[i])
         return mt
 
     def _beam_search(self, enc_hiddens: torch.Tensor, enc_masks: torch.Tensor, dec_init_state: torch.Tensor,
@@ -694,6 +723,7 @@ class LSTM_Att(NMT):
         Returns the most likely hypothesis found during beam search as a list containing:
             - The predicted translation from the model as a list of sub-word tokens
             - The negative log-likelihood score of the decoding as a float
+            - A torch.tensor that is of size (dec_steps, src_len) containing the attention scores at each step
         """
         assert isinstance(beam_size, int) and 0 < beam_size <= 5, "beam_size must be an int [1, 5]"
         assert len(enc_hiddens.shape) == 2, "enc_hiddens should be 2 dimensional"
@@ -718,6 +748,7 @@ class LSTM_Att(NMT):
                                                         device=self.device).unsqueeze(0))  # (b=1, e)
         Ybar_t = torch.cat(tensors=(Y_t_embed, o_prev), dim=1)  # (b=1, e + h)
         h.append([Ybar_t, dec_init_state])  # Add in the tensors needed to make the next y_hat prediction
+        h.append([]) # Add an empty list to collect the attention scores used in making each prediction
         hypotheses = [h, ]  # Move into a list for iteration
 
         complete_hypotheses = []  # Collect the completed hypotheses and iter until we get k = beam_size
@@ -728,9 +759,9 @@ class LSTM_Att(NMT):
             n = len(hypotheses)  # Count how many hypotheses still remain
             # Collect together all the decoder input tensors from each hypothesis to feed into the decoder
             # so that they can be processed in parallel which is generally faster
-            Ybar_t = torch.concat([h[-1][0] for h in hypotheses])  # (beam_size, 2 * embed_size)
-            h_t = torch.concat([h[-1][1][0].unsqueeze(0) for h in hypotheses])  # (beam_size, hidden_size)
-            c_t = torch.concat([h[-1][1][1].unsqueeze(0) for h in hypotheses])  # (beam_size, hidden_size)
+            Ybar_t = torch.concat([h[2][0] for h in hypotheses])  # (beam_size, 2 * embed_size)
+            h_t = torch.concat([h[2][1][0].unsqueeze(0) for h in hypotheses])  # (beam_size, hidden_size)
+            c_t = torch.concat([h[2][1][1].unsqueeze(0) for h in hypotheses])  # (beam_size, hidden_size)
 
             dec_state, o_t, e_t = self.step(Ybar_t, (h_t, c_t), enc_hiddens[:n:, :, :],
                                             enc_hiddens_proj[:n:, :, :], enc_masks[:n, :])
@@ -753,6 +784,7 @@ class LSTM_Att(NMT):
                                                                     device=self.device).unsqueeze(0))
                     Ybar_t = torch.cat(tensors=(Y_t_embed, o_t[i, :].unsqueeze(0)), dim=1)  # (b=1, e + h)
                     new_h.append([Ybar_t, (dec_state[0][i, :], dec_state[1][i, :])])
+                    new_h.append(h[3] + [e_t[i]])  # Add this attention score vector for this ith hypothesis
 
                     # Check if this hypothesis has been completed, if so, add it to complete_hypotheses
                     # instead of new_hypotheses so that we can exit the while loop. We don't count the start
@@ -772,8 +804,19 @@ class LSTM_Att(NMT):
 
         # Once we've collected k = beam_size completed hypotheses, return the best one
         complete_hypotheses.sort(key=lambda x: -x[0] / (len(x[1]) ** alpha))  # Sort in descending order
-        return [complete_hypotheses[0][1],
-                -complete_hypotheses[0][0]]  # (work_token_list, neg_log_likelihood)
+
+        # Return the completed hypothesis (work_token_list, neg_log_likelihood, attention_scores)
+        h = complete_hypotheses[0] # Take the best hypothesis after sorting
+        # Convert to a list of attention score tensors each of size (T, src_len) where T = decode steps and
+        # also apply the softmax normalization to each along the last dimension to turn them into prob
+        # distributions from [0, 1] across the encoder inputs
+        att_scores = torch.concat([x.unsqueeze(0) for x in h[3]], dim=0)  # (dec_step, src_len)
+        att_scores = F.softmax(att_scores, dim=-1)  # Apply softmax to normalize the logits into probs
+        # Truncate the attention score tensor to exclude padding tokens used to make the batch of sentences
+        # equal length for processing. Also truncate the attention score tensor to exclude time steps beyond
+        # the mt output sequence length minus 1 since there are (n-1) timesteps after <s> to generate the mt
+        att_scores = att_scores[:(len(h[1]) - 1), enc_masks[0, :]==0]
+        return [h[1], -h[0], att_scores]
 
     def save(self, model_path: str, verbose: bool = False) -> None:
         """
