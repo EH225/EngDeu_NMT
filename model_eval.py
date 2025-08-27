@@ -19,7 +19,7 @@ import torch, os
 
 from tqdm import tqdm
 from termcolor import colored as c
-import time
+import time, math
 
 
 ############################################
@@ -533,7 +533,8 @@ def generate_mt_df(model: NMT, eval_data: List[Tuple[List[str]]], kwargs: dict =
     # Record the outputs for each translation i.e. the source sentence (src), the target sentence (tgt) i.e.
     # the translation provided in the data set and the model translation (machine translation = mt)
     chunks = []  # Create DataFrame chunks that will be concatenated at the end
-    for src_sents, tgt_sents in util.batch_iter(eval_data, batch_size=32, shuffle=False):
+    for src_sents, tgt_sents in tqdm(util.batch_iter(eval_data, batch_size=32, shuffle=False),
+                                     ncols=75, total=math.ceil(len(eval_data) / 32)):
         chunk = pd.DataFrame(columns=["src", "tgt", "mt"])
         chunk["src"] = [util.tokens_to_str(s) for s in src_sents]  # Record the input source sentences
         chunk["tgt"] = [util.tokens_to_str(s) for s in tgt_sents]  # Record the output target sentences

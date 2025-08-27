@@ -31,6 +31,8 @@ if __name__ == "__main__":
     kwargs = {"beam_size": 5} if beam_search is True else {"beam_size": 1, "k_pct": 0.1}
     print("kwargs:", kwargs)
 
+    print(f"Predictions will be produced for: {all_models.MODELS}")
+
     device = util.setup_device(try_gpu=True)  # Train on a GPU if one is available
     print(f"Model predictions will be made using the {device}\n")
 

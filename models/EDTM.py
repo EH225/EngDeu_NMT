@@ -970,7 +970,7 @@ class EDTM(NMT):
         max_decode_lengths specifies the max length of the translation output for each input sentence. If an
         integer is provided, then that value is applied to all sentences. If not specified, then the default
         value will be max(len(src_sentence) * 2, 10) for each src_sentence in src_sentences. The values of
-        max_decode_lengths are capped at 1000 globally.
+        max_decode_lengths are capped at self.block_size globally.
 
         Set tokenized = False if src_sentences is passed as a list of sentence strings or True if they have
         already been tokenized into list of sub-word tokens. The returned output will match the input i.e.
@@ -998,7 +998,7 @@ class EDTM(NMT):
             The max number of time steps to run the decoder unroll sequence for each input sentence. The
             output machine translation produced for each sentence will be capped in length to a certain
             amount of sub-word tokens specified here. The default is max(len(src_sentence) * 2, 10) for each
-            source sentence and all values are capped at <= 1000.
+            source sentence and all values are capped at <= 250.
         tokenized : bool, optional
             Denotes whether src_sentences has already been tokenized.
 
@@ -1036,9 +1036,9 @@ class EDTM(NMT):
         if isinstance(max_decode_lengths, int):  # Convert to a list if provided as an int
             max_decode_lengths = [max_decode_lengths for i in range(b)]
         max_decode_lengths = max_decode_lengths.copy()  # Copy to avoid mutation
-        for i, n in enumerate(max_decode_lengths):  # Check all are integer valued and capped at 1000
+        for i, n in enumerate(max_decode_lengths):  # Check all are integer valued and capped at 250
             assert isinstance(n, int) and n > 0, "All max_decode_lengths must be integers > 0"
-            max_decode_lengths[i] = min(n, 1000)
+            max_decode_lengths[i] = min(n, 250)
 
         msg = "src_sentences and max_decode_lengths must be the same length"
         assert len(max_decode_lengths) == len(src_sentences), msg
