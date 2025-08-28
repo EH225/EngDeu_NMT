@@ -16,7 +16,6 @@ from models.EDTM import EDTM
 
 MODELS = ["Fwd_RNN", "LSTM_Att", "EDTM", "Google_API"]  # List the models to be used from this module
 
-
 def load_model(model_class: str, src_lang: str, tgt_lang: str):
     """
     Helper util function that loads a model from a given model_class for a specified translation language

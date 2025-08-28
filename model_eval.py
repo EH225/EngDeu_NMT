@@ -766,8 +766,6 @@ if __name__ == "__main__":
     data_set_name = args.data_set_name
 
     model_classes = all_models.MODELS  # Use all the models listed in all_models
-    # ['Fwd_RNN', 'LSTM_Att', 'EDTM', 'Google_API'] # All the models to evaluate
-    # model_classes = ['Google_API']
 
     # Generate evaluation tables for the data set i.e. one of ["train_debug", "validation", "test"]
     print(f"Running model evaluation for {model_classes} using dataset={data_set_name}")

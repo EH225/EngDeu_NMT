@@ -36,6 +36,8 @@ if __name__ == "__main__":
     device = util.setup_device(try_gpu=True)  # Train on a GPU if one is available
     print(f"Model predictions will be made using the {device}\n")
 
+    data_set_names = ["test"] # TODO: TEMP only, remove after
+
     for data_set_name in data_set_names:  # Generate predictions for all data sets
         print(f"\nWorking on data set: {data_set_name}")
         eval_data_dict = model_eval.build_eval_dataset(data_set_name)
