@@ -10,6 +10,8 @@ import math, os, sys, importlib
 import torch.nn as nn
 import torch
 
+BASE_PATH = os.path.abspath(os.path.dirname(__file__))
+
 
 def setup_device(try_gpu: bool = True):
     """
@@ -46,10 +48,11 @@ def get_model_save_dir(model_class: str, src_lang: str, tgt_lang: str, debug: bo
     str
         The model's save directory.
     """
+    lang_pair = src_lang.capitalize() + tgt_lang.capitalize()
     if debug is False:
-        return f"saved_models/{model_class}/{src_lang.capitalize()}{tgt_lang.capitalize()}/"
+        return os.path.join(BASE_PATH, f"saved_models/{model_class}/{lang_pair}/")
     else:  # Differentiate so that we do not accidentally save over a trained model when debug testing
-        return f"saved_models/debug/{model_class}/{src_lang.capitalize()}{tgt_lang.capitalize()}/"
+        return os.path.join(BASE_PATH, f"saved_models/debug/{model_class}/{lang_pair}/")
 
 
 def read_corpus(lang: str, subset: str, is_tgt: bool, tokenize: bool = True) -> List[List[str]]:
@@ -87,7 +90,7 @@ def read_corpus(lang: str, subset: str, is_tgt: bool, tokenize: bool = True) -> 
 
     tokenized_sentences = []  # Collect the tokenized sentences
     sp = spm.SentencePieceProcessor()  # Instantiate the tokenizer model
-    sp.load(f"vocab/{lang}/{lang}.model")  # Load in the pre-trained tokenizer model
+    sp.load(os.path.join(BASE_PATH, f"vocab/{lang}/{lang}.model"))  # Load in the pre-trained tokenizer model
     tokenized_sentences = sentences[sentences.columns[0]].astype(str).apply(lambda x: sp.encode_as_pieces(x))
     tokenized_sentences = list(tokenized_sentences.values)  # Convert to a list of lists
 
@@ -160,7 +163,7 @@ def tokenize_sentences(sentences: List[str], lang: str, is_tgt: bool = False) ->
         Outputs a list of sentences that are each a list of sub-word tokens.
     """
     sp = spm.SentencePieceProcessor()  # Instantiate the tokenizer model
-    sp.load(f"vocab/{lang}/{lang}.model")  # Load in the pre-trained weights
+    sp.load(os.path.join(BASE_PATH, f"vocab/{lang}/{lang}.model"))  # Load in the pre-trained tokenizer model
     tokenized_sentences = [sp.encode_as_pieces(sentence) for sentence in sentences]
     if is_tgt is True:  # Only append <s> and </s> tokens if this is a target data set
         for s in tokenized_sentences:
