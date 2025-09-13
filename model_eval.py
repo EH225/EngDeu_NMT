@@ -4,6 +4,7 @@ This module contains helper functions for model evaluation e.g. functions to com
 NIST, METEOR, ROUGE, TER, BERT, BLEURT, COMET and also model summary comparison tables.
 """
 import os, sys
+
 BASE_PATH = os.path.abspath(os.path.dirname(__file__))
 sys.path.insert(0, BASE_PATH)  # This module exists at the root dir of the project, add that to the path
 import models.all_models as all_models
@@ -605,7 +606,8 @@ def generate_model_eval_summary(model: NMT, eval_data: List[Tuple[List[str]]],
     mt_df = None
     if cached_dset_name is not None:  # Attempt to read in mt_df from the cached location
         try:  # Try reading in the CSV file containing the mt_df for this data set
-            mt_df = pd.read_csv(f"model_pred/{lang_pair}/{model.name}/{cached_dset_name}.csv")
+            file_path = os.path.join(BASE_PATH, f"model_pred/{lang_pair}/{model.name}/{cached_dset_name}.csv")
+            mt_df = pd.read_csv(file_path)
             print(f"Using {model.name} {lang_pair} {cached_dset_name} cached predictions")
         except:  # Report if it cannot be done, mt_df remains None
             print(f"Cached mt_df for {model.name} {lang_pair} {cached_dset_name} could not be read")
@@ -738,13 +740,91 @@ def run_qualitative_analysis(model_class: str, src_lang: str, tgt_lang: str) -> 
                               util.tokenize_sentences(tgt_s, tgt_lang)))
 
     mt_df = generate_mt_df(all_models.load_model(model_class, src_lang, tgt_lang), qual_eval_data)
-    translation_name = f"{src_lang.capitalize()}{tgt_lang.capitalize()}"
-    print(f"Qualitative Translation Quality Analysis for {model_class} - {translation_name}")
+    lang_pair = f"{src_lang.capitalize()}{tgt_lang.capitalize()}"
+    print(f"Qualitative Translation Quality Analysis for {model_class} - {lang_pair}")
     print_qualitative_comparison(mt_df)
     return mt_df
 
 
-## TODO: Get together some easy, medium, and hard sentences based on sentence length
+def get_mt_comp_df(model_classes: List[str], lang_pair: str, dataset_name: str, k: int = 2) -> pd.DataFrame:
+    """
+    Generates a mt_comp_df which is a DataFrame of example sentences which includes the following columns:
+        - src: A column with the input source text
+        - tgt: A column with the reference translation provided in the data set
+        - A column for each model class in model_classes containing its machine translation
+
+    Sentences are randomly sampled from the cached predictions directory for the dataset_name specified.
+    k short sentences, medium, and long sentences are sampled at random to create this comparison df.
+
+    Parameters
+    ----------
+    model_classes : List[str]
+        A list of model classes e.g. ["LSTM_Att", "EDTM", "Google_API"].
+    lang_pair : str
+        A language pair denoting the direction of translation i.e. "EngDeu" or "DeuEng".
+    dataset_name : str
+        The name of the data set from which to randomly sample examples e.g. "test" or "validation".
+    k : int
+        An integer specifying how many examples from each of the 3 categories to sample.
+
+    Returns
+    -------
+    comp_df : pd.DataFrame
+        A DataFrame containing machine translation examples for each model class from the dataset specified.
+
+    """
+    assert isinstance(model_classes, list), "model_classes must be a list"
+    assert lang_pair in ["EngDeu", "DeuEng"], "lang_pair must be either EngDeu or DeuEng"
+    assert isinstance(k, int) and k >= 1, "k must be an int >= 1"
+
+    comp_df = pd.DataFrame(columns=["src", "tgt"] + list(model_classes), index=range(k * 3))
+
+    for i, model_class in enumerate(model_classes):
+        file_path = os.path.join(BASE_PATH, f"model_pred/{lang_pair}/{model_class}/{dataset_name}.csv")
+        mt_df = pd.read_csv(file_path)
+
+        if i == 0:  # Select the example sentences to use across all models
+            word_counts = mt_df["tgt"].str.len()
+            examples = []  # Collect k examples from each level of difficulty i.e. by sentence length quantile
+            examples.append(mt_df.loc[word_counts == word_counts.quantile(0.1), :].sample(n=k))
+            examples.append(mt_df.loc[word_counts == word_counts.quantile(0.4), :].sample(n=k))
+            examples.append(mt_df.loc[word_counts == word_counts.quantile(0.75), :].sample(n=k))
+            examples = pd.concat(examples)
+            comp_df.loc[:, ["src", "tgt", model_class]] = examples.values
+            comp_df.index = examples.index  # Use the same index for quick look up in the other mt_dfs
+        else:  # Extract out the machine translations for this model for these examples
+            comp_df[model_class] = mt_df.loc[comp_df.index, "mt"].values
+
+    return comp_df
+
+
+def print_mt_comp(mt_comp_df: pd.DataFrame) -> None:
+    """
+    Prints a side-by-side comparison of machine translation results contained in mt_comp_df, which should
+    contain:
+        - src: A column with the input source text
+        - tgt: A column with the reference translation provided in the data set
+        - All other columns should be named by model class and contain the machine translations produced by
+          each model for the sample src sentence.
+    The contents of each are printed to the console with coloring for a side-by-side qualitative comparison.
+
+    Parameters
+    ----------
+    mt_comp_df : pd.DataFrame
+        A dataframe from get_mt_comp_df containing machine translation examples.
+
+    """
+    model_classes = list(mt_comp_df.columns)  # src, tgt 9 model names
+    model_classes.remove("src")
+    model_classes.remove("tgt")
+    for i, (idx, row) in enumerate(mt_comp_df.iterrows()):  # Print out the example contained in each row
+        print(c(f"Example: {i + 1}", "magenta"))
+        print(c("Source:", "cyan"), row["src"])
+        print(c("Target:", "magenta"), row["tgt"])
+        for model_class in model_classes:  # Display the machine translations from each model
+            print(c(f"{model_class}:", "red"), row[model_class])
+        print()  # Add some spacing after each example to add separation between examples
+
 
 ##############################################################################################################
 
