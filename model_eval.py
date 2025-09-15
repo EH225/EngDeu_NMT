@@ -661,7 +661,8 @@ def generate_model_summary_table(model_classes: List[str], data_set_name: str) -
 
     # Enumerate all the evaluation metrics used
     metrics = ["Perplexity", "BLEU", "NIST", "METEOR", "ROUGE", "TER", "BERT", "BLEURT", "COMET"]
-    cols = pd.MultiIndex.from_tuples([("Model", x) for x in ["Embed Size", "Hidden Size", "Total Params"]] +
+    model_size_vars = ["Embed Size", "Hidden Size", "Total Params", "Size (MB)"]
+    cols = pd.MultiIndex.from_tuples([("Model", x) for x in model_size_vars] +
                                      [("DeuEng", x) for x in metrics] + [("EngDeu", x) for x in metrics])
     summary_table = pd.DataFrame(index=model_classes, columns=cols)
 
@@ -675,6 +676,7 @@ def generate_model_summary_table(model_classes: List[str], data_set_name: str) -
                 summary_table.loc[model_class, ("Model", "Hidden Size")] = model.hidden_size  # Record h size
                 col = ("Model", "Total Params")  # Record the number of trainable parameters in the model
                 summary_table.loc[model_class, col] = util.count_trainable_parameters(model)
+                summary_table.loc[model_class, ("Model", "Size (MB)")] = util.model_memory_size(model)
                 # Compute automatic performance metrics for this model using the eval data set
                 model_smry = generate_model_eval_summary(model, eval_data_dict[lang_pair], data_set_name)
                 for eval_metric, metric_score in model_smry.items():  # Add each computed metric score to the

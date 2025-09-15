@@ -214,6 +214,23 @@ def count_trainable_parameters(model: nn.Module) -> int:
     return sum(p.numel() for p in model.parameters() if p.requires_grad)
 
 
+def model_memory_size(model: nn.Module) -> float:
+    """
+    Calculates the size of a PyTorch model in megabytes (MB).
+    """
+    total_params_size = 0
+    for param in model.parameters():
+        total_params_size += param.nelement() * param.element_size()
+
+    total_buffers_size = 0
+    for buffer in model.buffers():
+        total_buffers_size += buffer.nelement() * buffer.element_size()
+
+    total_size_bytes = total_params_size + total_buffers_size
+    total_size_mb = total_size_bytes / (10 ** 6)
+    return total_size_mb
+
+
 def plot_heatmap(df: pd.DataFrame, max_val: float = None, min_val: float = None, cmap: str = "RdBu",
                  fmt: str = None, show_cbar: bool = False, ax=None) -> None:
     """

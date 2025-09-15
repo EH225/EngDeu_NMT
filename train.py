@@ -66,8 +66,7 @@ def train_model(model: NMT, train_data: List[Tuple[List[str]]], dev_data: List[T
     batch_size_val = params.get("batch_size_val", 64)  # Batch size to use during validation eval
     lr = params.get("lr", 5e-3)  # Specify the learning rate of the model
     grad_clip = params.get("grad_clip", 2)  # Gradient clipping threshold
-    validation_niter = params.get("validation_niter",
-                                  1000)  # How often to evaluate on the validation data set
+    validation_niter = params.get("validation_niter", 1000)  # How often to evaluate on the val data set
     log_niter = params.get("log_niter", 100)  # How often to print training log updates
     patience_lim = params.get("patience_lim", 3)  # How many val evals to wait for the model to improve before
     # lowering the learning rate and training again
