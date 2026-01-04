@@ -18,7 +18,7 @@ from typing import List, Tuple
 import sentencepiece as spm
 
 BASE_PATH = os.path.abspath(os.path.dirname(__file__))
-DATEDT_DIR = os.path.join(BASE_PATH, "..", "dataset")
+DATASET_DIR = os.path.join(BASE_PATH, "..", "dataset")
 
 
 ########################
@@ -412,10 +412,10 @@ torch.serialization.add_safe_globals([VocabEntry, Vocab])
 
 if __name__ == '__main__':
     print("Running tokenization on eng/train.csv")
-    eng_tokens = train_subword_tokenizer(os.path.join(DATEDT_DIR, "eng/train.csv"), "eng", 30000)
+    eng_tokens = train_subword_tokenizer(os.path.join(DATASET_DIR, "eng/train.csv"), "eng", 30000)
 
     print("Running tokenization on deu/train.csv")
-    deu_tokens = train_subword_tokenizer(os.path.join(DATEDT_DIR, "deu/train.csv"), "deu", 30000)
+    deu_tokens = train_subword_tokenizer(os.path.join(DATASET_DIR, "deu/train.csv"), "deu", 30000)
 
     # Build and cache a Vocab object for English to German translation models
     eng_to_deu_vocab = Vocab.build("eng", "deu", eng_tokens, deu_tokens)
