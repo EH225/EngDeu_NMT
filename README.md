@@ -10,3 +10,5 @@ This repository contains code for the English-German neural machine translation 
 - `model_eval.py`: This module contains code related to evaluating model performance and generating the evaluation summaries found in `eval_tables/`.
 - `train.py`: This module contains code related to training the models.
 - `util.py`: This module contains general utility functions used throughout the repo.
+
+This project leveraged materials from Stanford University's Natural Language Processing with Deep Learning ([XCS231N](https://web.stanford.edu/class/cs224n/)) course, with many modifications.
