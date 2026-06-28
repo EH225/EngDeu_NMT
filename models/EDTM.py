@@ -443,8 +443,8 @@ class CrossAttentionLayer(nn.Module):
 class EncoderBlock(nn.Module):
     """
     Encoder Transformer Attention Block that computes:
-        x = LayerNorm(SelfAttention(x) + x)
-        x = LayerNorm(MLP(x) + x)
+        x = SelfAttention(LayerNorm(x)) + x
+        x = MLP(LayerNorm(x)) + x
         return x
     """
 
@@ -477,8 +477,8 @@ class EncoderBlock(nn.Module):
     def forward(self, x: torch.Tensor, masks: torch.Tensor = None) -> torch.Tensor:
         """
         Defines the forwards pass evaluation through this transformer attention block which involves:
-            x = LayerNorm(SelfAttention(x) + x)
-            x = LayerNorm(MLP(x) + x)
+            x = SelfAttention(LayerNorm(x)) + x
+            x = MLP(LayerNorm(x)) + x
             return x
 
         Residual connections are used in this model.
@@ -502,10 +502,10 @@ class EncoderBlock(nn.Module):
         """
         # Normalize the x input vector and then pass it through the self-attention block, then add x to that
         # output to form a residual connection and then norm the combined output
-        x = self.ln1(self.attn(x, masks) + x)
-        # Pass the updated x into the multi-layer-perceptron (MLP) FFNN, then add x to that output to form
-        # a residual connection and then norm the combined output one more time
-        x = self.ln2(self.mlp(x) + x)
+        x = self.attn(self.ln1(x), masks) + x
+        # Pass the updated x through another layer-norm, then into the multi-layer-perceptron (MLP) FFNN,
+        # then add x to that output to form a residual connection
+        x = self.mlp(self.ln2(x)) + x
         return x  # (batch_size, seq_len, hidden_size)
 
 
@@ -531,9 +531,9 @@ class Encoder(nn.Sequential):
 class DecoderBlock(nn.Module):
     """
     Decoder Transformer Attention Block that computes:
-        x = LayerNorm(SelfAttention(x) + x)
-        x = LayerNorm(CrossAttention(enc_hiddens, enc_masks, x) + x)
-        x = LayerNorm(MLP(x) + x)
+        x = SelfAttention(LayerNorm(x)) + x
+        x = CrossAttention(enc_hiddens, enc_masks, LayerNorm(x)) + x
+        x = MLP(LayerNorm(x)) + x
         return x
     """
 
@@ -578,9 +578,9 @@ class DecoderBlock(nn.Module):
                 step: bool = False) -> torch.Tensor:
         """
         Defines the forwards pass evaluation through this decoder transformer attention block which involves:
-            x = LayerNorm(SelfAttention(x) + x)
-            x = LayerNorm(CrossAttention(enc_hiddens, enc_masks, x) + x)
-            x = LayerNorm(MLP(x) + x)
+            x = SelfAttention(LayerNorm(x)) + x
+            x = CrossAttention(enc_hiddens, enc_masks, LayerNorm(x)) + x
+            x = MLP(LayerNorm(x)) + x
             return x
 
         Residual connections are used in this model.
@@ -612,15 +612,18 @@ class DecoderBlock(nn.Module):
             target sequence token attends to all of the encoder tokens and also the ones at or before the
             current token in the decode sequence.
         """
-        # Pass x from the decoder through masked multi-headed self-attention, then add to self and norm
-        # We don't need to pass in padding masks for the decoder self-attention layer because causal=True
-        # so attention will only be applied to tokens to the left of each and padding is always on the right
-        x = self.ln1(self.self_attn(x, step=step) + x)
-        # Pass x then through the multi-headed cross-attention block with the encoder outputs, then add to
-        # self and norm for residual connections
-        x = self.ln2(self.cross_attn(enc_hiddens, x, enc_masks, step=step) + x)
-        # Pass x through the multi-layer perceptron (NLP) FFNN later, then add to self and norm again
-        x = self.ln3(self.mlp(x) + x)
+
+
+        # Pass x from the decoder through layer norm, then masked multi-headed self-attention, then add to
+        # self to form a residual connection. We don't need to pass in padding masks for the decoder
+        # self-attention layer because causal=True so attention will only be applied to tokens to the left of
+        # each and padding is always on the right
+        x = self.self_attn(self.ln1(x), step=step) + x
+        # Pass x through layer norm, then through the multi-headed cross-attention block with the encoder
+        # outputs, then add to self for residual connections
+        x = self.cross_attn(enc_hiddens, self.ln2(x), enc_masks, step=step) + x
+        # Pass x through layer norm, the multi-layer perceptron (NLP) FFNN later, then add to self again
+        x = self.mlp(self.ln3(x)) + x
         return x  # (batch_size, tgt_len, hidden_size)
 
 
